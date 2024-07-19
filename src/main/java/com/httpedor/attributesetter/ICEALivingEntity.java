@@ -1,4 +1,4 @@
-package com.httpedor.customentityattributes;
+package com.httpedor.attributesetter;
 
 public interface ICEALivingEntity {
 

@@ -1,7 +1,5 @@
-package com.httpedor.customentityattributes;
+package com.httpedor.attributesetter;
 
-import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRegistry;
-import net.minecraft.entity.EntityType;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.util.Identifier;
@@ -9,7 +7,7 @@ import net.minecraft.util.Identifier;
 import java.util.HashMap;
 import java.util.Map;
 
-public class CustomEntityAttributesAPI {
+public class AttributeSetterAPI {
     static final Map<Identifier, Map<EntityAttribute, EntityAttributeModifier>> ENTITY_MODIFIERS = new HashMap<>();
     static final Map<Identifier, Map<EntityAttribute, Double>> BASE_MODIFIERS = new HashMap<>();
     static final Map<Identifier, Map<EntityAttribute, EntityAttributeModifier>> TAG_MODIFIERS = new HashMap<>();

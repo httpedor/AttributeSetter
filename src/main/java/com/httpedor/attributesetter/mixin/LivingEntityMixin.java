@@ -1,10 +1,9 @@
-package com.httpedor.customentityattributes.mixin;
+package com.httpedor.attributesetter.mixin;
 
-import com.httpedor.customentityattributes.ICEALivingEntity;
+import com.httpedor.attributesetter.ICEALivingEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtTypes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;

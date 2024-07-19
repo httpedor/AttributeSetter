@@ -1,4 +1,4 @@
-package com.httpedor.customentityattributes;
+package com.httpedor.attributesetter;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -7,7 +7,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKeys;
@@ -16,15 +15,13 @@ import net.minecraft.resource.Resource;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.resource.ResourceType;
 import net.minecraft.util.Identifier;
-import org.spongepowered.asm.mixin.injection.struct.InjectorGroupInfo;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Map;
 import java.util.UUID;
-import java.util.logging.Logger;
 
-public class CustomEntityAttributes implements ModInitializer {
+public class AttributeSetter implements ModInitializer {
 
     @Override
     public void onInitialize() {
@@ -39,7 +36,7 @@ public class CustomEntityAttributes implements ModInitializer {
             ((ICEALivingEntity) le).cea$setLoaded();
             var entityType = Registries.ENTITY_TYPE.getId(entity.getType());
             var id = new Identifier(entityType.getNamespace(), entityType.getPath());
-            for (var entry : CustomEntityAttributesAPI.BASE_TAG_MODIFIERS.entrySet())
+            for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
             {
                 if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
                 {
@@ -52,7 +49,7 @@ public class CustomEntityAttributes implements ModInitializer {
                 }
             }
 
-            var baseMods = CustomEntityAttributesAPI.BASE_MODIFIERS.getOrDefault(id, null);
+            var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
             if (baseMods != null)
             {
                 for (var entry : baseMods.entrySet())
@@ -63,7 +60,7 @@ public class CustomEntityAttributes implements ModInitializer {
                 }
             }
 
-            for (var entry : CustomEntityAttributesAPI.TAG_MODIFIERS.entrySet())
+            for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
             {
                 if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
                 {
@@ -76,7 +73,7 @@ public class CustomEntityAttributes implements ModInitializer {
                 }
             }
 
-            var modifiers = CustomEntityAttributesAPI.ENTITY_MODIFIERS.getOrDefault(id, null);
+            var modifiers = AttributeSetterAPI.ENTITY_MODIFIERS.getOrDefault(id, null);
             if (modifiers != null)
             {
                 for (var entry : modifiers.entrySet())
@@ -98,11 +95,12 @@ public class CustomEntityAttributes implements ModInitializer {
 
             @Override
             public void reload(ResourceManager manager) {
-                CustomEntityAttributesAPI.ENTITY_MODIFIERS.clear();
-                CustomEntityAttributesAPI.BASE_MODIFIERS.clear();
-                CustomEntityAttributesAPI.TAG_MODIFIERS.clear();
-                CustomEntityAttributesAPI.BASE_TAG_MODIFIERS.clear();
-                for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("customentityattributes", path -> true).entrySet())
+                AttributeSetterAPI.ENTITY_MODIFIERS.clear();
+                AttributeSetterAPI.BASE_MODIFIERS.clear();
+                AttributeSetterAPI.TAG_MODIFIERS.clear();
+                AttributeSetterAPI.BASE_TAG_MODIFIERS.clear();
+                //TODO add support for items
+                for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter", path -> true).entrySet())
                 {
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
@@ -127,9 +125,9 @@ public class CustomEntityAttributes implements ModInitializer {
                                 if (isBase)
                                 {
                                     if (isTag)
-                                        CustomEntityAttributesAPI.registerTagBaseAttribute(id, attr, modObj.get("value").getAsDouble());
+                                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, modObj.get("value").getAsDouble());
                                     else
-                                        CustomEntityAttributesAPI.registerEntityBaseAttribute(id, attr, modObj.get("value").getAsDouble());
+                                        AttributeSetterAPI.registerEntityBaseAttribute(id, attr, modObj.get("value").getAsDouble());
                                 }
                                 else
                                 {
@@ -141,9 +139,9 @@ public class CustomEntityAttributes implements ModInitializer {
                                         mod = new EntityAttributeModifier("CEAMod", value, op);
 
                                     if (isTag)
-                                        CustomEntityAttributesAPI.registerTagAttributeModifier(id, attr, mod);
+                                        AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
                                     else
-                                        CustomEntityAttributesAPI.registerEntityAttributeModifier(id, attr, mod);
+                                        AttributeSetterAPI.registerEntityAttributeModifier(id, attr, mod);
                                 }
                             }
                         }

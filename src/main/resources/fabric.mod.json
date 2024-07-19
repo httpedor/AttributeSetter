@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
-  "id": "cea",
+  "id": "attributesetter",
   "version": "${version}",
-  "name": "CustomEntityAttributes",
+  "name": "AttributeSetter",
   "description": "",
   "authors": [],
   "contact": {
-    "repo": "https://github.com/theco/CustomEntityAttributes"
+    "repo": "https://github.com/theco/AttributeSetter"
   },
   "license": "GNU General Public License v3.0",
   "icon": "assets/attributesetter/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [
-      "com.httpedor.customentityattributes.CustomEntityAttributes"
+      "com.httpedor.attributesetter.AttributeSetter"
     ]
   },
   "mixins": [
-    "customentityattributes.mixins.json"
+    "attributesetter.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
