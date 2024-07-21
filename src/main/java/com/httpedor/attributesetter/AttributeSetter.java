@@ -4,8 +4,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
+import net.fabricmc.fabric.api.item.v1.ModifyItemAttributeModifiersCallback;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.registry.Registries;
@@ -30,10 +32,10 @@ public class AttributeSetter implements ModInitializer {
             if (!(entity instanceof LivingEntity))
                 return;
             LivingEntity le = (LivingEntity) entity;
-            if (((ICEALivingEntity)le).cea$isLoaded())
+            if (((ASLivingEntity)le).as$isLoaded())
                 return;
 
-            ((ICEALivingEntity) le).cea$setLoaded();
+            ((ASLivingEntity) le).as$setLoaded();
             var entityType = Registries.ENTITY_TYPE.getId(entity.getType());
             var id = new Identifier(entityType.getNamespace(), entityType.getPath());
             for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
@@ -87,10 +89,38 @@ public class AttributeSetter implements ModInitializer {
             le.setHealth(le.getMaxHealth());
         });
 
+        ModifyItemAttributeModifiersCallback.EVENT.register((stack, slot, modsMap) -> {
+            var item = stack.getItem();
+            var id = Registries.ITEM.getId(item);
+            for (var entry : AttributeSetterAPI.TAG_ITEM_MODIFIERS.entrySet())
+            {
+                if (stack.isIn(TagKey.of(RegistryKeys.ITEM, entry.getKey())) && entry.getValue().containsKey(slot))
+                {
+                    for (var modEntry : entry.getValue().get(slot).entrySet())
+                    {
+                        modsMap.put(modEntry.getKey(), modEntry.getValue());
+                    }
+                }
+            }
+
+            var modifiers = AttributeSetterAPI.ITEM_MODIFIERS.getOrDefault(id, null);
+            if (modifiers != null)
+            {
+                var slotMods = modifiers.getOrDefault(slot, null);
+                if (slotMods != null)
+                {
+                    for (var entry : slotMods.entrySet())
+                    {
+                        modsMap.put(entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+        });
+
         ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new SimpleSynchronousResourceReloadListener() {
             @Override
             public Identifier getFabricId() {
-                return new Identifier("customentityattributes", "read_attributes");
+                return new Identifier("attributesetter", "read_attributes");
             }
 
             @Override
@@ -99,8 +129,10 @@ public class AttributeSetter implements ModInitializer {
                 AttributeSetterAPI.BASE_MODIFIERS.clear();
                 AttributeSetterAPI.TAG_MODIFIERS.clear();
                 AttributeSetterAPI.BASE_TAG_MODIFIERS.clear();
+                AttributeSetterAPI.ITEM_MODIFIERS.clear();
+                AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
                 //TODO add support for items
-                for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter", path -> true).entrySet())
+                for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter/entity", path -> true).entrySet())
                 {
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
@@ -134,15 +166,74 @@ public class AttributeSetter implements ModInitializer {
                                     var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
                                     EntityAttributeModifier mod;
                                     if (modObj.has("uuid"))
-                                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "CEAMod", value, op);
+                                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                                     else
-                                        mod = new EntityAttributeModifier("CEAMod", value, op);
+                                        mod = new EntityAttributeModifier("ASMod", value, op);
 
                                     if (isTag)
                                         AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
                                     else
                                         AttributeSetterAPI.registerEntityAttributeModifier(id, attr, mod);
                                 }
+                            }
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Failed to read " + resEntry.getKey());
+                        e.printStackTrace();
+                    }
+                }
+
+                for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter/item", path -> true).entrySet())
+                {
+                    try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
+                        InputStreamReader reader = new InputStreamReader(stream);
+                        JsonObject obj = (JsonObject) JsonParser.parseReader(reader);
+                        for (var entry : obj.entrySet())
+                        {
+                            var mods = entry.getValue().getAsJsonArray();
+                            boolean isTag = entry.getKey().startsWith("#");
+                            for (var modElement : mods)
+                            {
+                                var modObj = modElement.getAsJsonObject();
+                                String opStr;
+                                String slotStr;
+                                if (modObj.has("operation"))
+                                    opStr = modObj.get("operation").getAsString();
+                                else
+                                    opStr = "ADDITION";
+
+                                if (modObj.has("slot"))
+                                    slotStr = modObj.get("slot").getAsString();
+                                else
+                                    slotStr = "MAINHAND";
+
+                                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
+                                var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
+                                var value = modObj.get("value").getAsDouble();
+                                EquipmentSlot slot;
+                                try {
+                                    slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                                } catch (IllegalArgumentException e)
+                                {
+                                    System.out.println("Invalid slot: " + slotStr);
+                                    continue;
+                                }
+                                if (attr == null)
+                                {
+                                    System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
+                                    continue;
+                                }
+                                var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
+                                EntityAttributeModifier mod;
+                                if (modObj.has("uuid"))
+                                    mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
+                                else
+                                    mod = new EntityAttributeModifier("ASMod", value, op);
+
+                                if (isTag)
+                                    AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
+                                else
+                                    AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
                             }
                         }
                     } catch (Exception e) {
