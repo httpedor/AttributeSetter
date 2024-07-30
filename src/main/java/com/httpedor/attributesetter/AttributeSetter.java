@@ -27,6 +27,7 @@ public class AttributeSetter implements ModInitializer {
 
     @Override
     public void onInitialize() {
+
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
             if (world.isClient) return;
             if (!(entity instanceof LivingEntity))
@@ -131,7 +132,6 @@ public class AttributeSetter implements ModInitializer {
                 AttributeSetterAPI.BASE_TAG_MODIFIERS.clear();
                 AttributeSetterAPI.ITEM_MODIFIERS.clear();
                 AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
-                //TODO add support for items
                 for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter/entity", path -> true).entrySet())
                 {
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {

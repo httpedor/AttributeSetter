@@ -27,6 +27,10 @@ repositories {
             includeGroup "maven.modrinth"
         }
     }
+    maven {
+        name "Will BL Releases"
+        url "https://maven.willbl.dev/releases"
+    }
 }
 
 dependencies {
