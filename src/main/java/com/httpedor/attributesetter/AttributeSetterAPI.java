@@ -15,6 +15,8 @@ public class AttributeSetterAPI {
     static final Map<Identifier, Map<EntityAttribute, Double>> BASE_TAG_MODIFIERS = new HashMap<>();
     static final Map<Identifier, Map<EquipmentSlot, Map<EntityAttribute, EntityAttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
     static final Map<Identifier, Map<EquipmentSlot, Map<EntityAttribute, EntityAttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<Identifier, Map<EquipmentSlot, Map<EntityAttribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<Identifier, Map<EquipmentSlot, Map<EntityAttribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
 
     public static void registerEntityAttributeModifier(Identifier entity, EntityAttribute attr, EntityAttributeModifier modifier) {
         if (!ENTITY_MODIFIERS.containsKey(entity))
@@ -51,5 +53,21 @@ public class AttributeSetterAPI {
             TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
         TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
+    }
+    public static void registerItemBaseAttribute(Identifier item, EntityAttribute attr, double baseValue, EquipmentSlot slot) {
+        if (!BASE_ITEM_MODIFIERS.containsKey(item))
+            BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
+        if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
+            BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
+
+        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, baseValue);
+    }
+    public static void registerTagItemBaseAttribute(Identifier tag, EntityAttribute attr, double baseValue, EquipmentSlot slot) {
+        if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
+            BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
+        if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
+            BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
+
+        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, baseValue);
     }
 }
