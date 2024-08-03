@@ -93,6 +93,29 @@ public class AttributeSetter implements ModInitializer {
         ModifyItemAttributeModifiersCallback.EVENT.register((stack, slot, modsMap) -> {
             var item = stack.getItem();
             var id = Registries.ITEM.getId(item);
+            for (var entry : AttributeSetterAPI.BASE_TAG_ITEM_MODIFIERS.entrySet())
+            {
+                if (stack.isIn(TagKey.of(RegistryKeys.ITEM, entry.getKey()))
+                        && entry.getValue().containsKey(slot))
+                {
+                    for (var modEntry : entry.getValue().get(slot).entrySet())
+                    {
+                        modsMap.get(modEntry.getKey()).clear();
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier("ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                    }
+                }
+            }
+            for (var entry : AttributeSetterAPI.BASE_ITEM_MODIFIERS.entrySet())
+            {
+                if (entry.getKey().equals(id) && entry.getValue().containsKey(slot))
+                {
+                    for (var modEntry : entry.getValue().get(slot).entrySet())
+                    {
+                        modsMap.get(modEntry.getKey()).clear();
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier("ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                    }
+                }
+            }
             for (var entry : AttributeSetterAPI.TAG_ITEM_MODIFIERS.entrySet())
             {
                 if (stack.isIn(TagKey.of(RegistryKeys.ITEM, entry.getKey())) && entry.getValue().containsKey(slot))
@@ -223,17 +246,27 @@ public class AttributeSetter implements ModInitializer {
                                     System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
                                     continue;
                                 }
-                                var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                EntityAttributeModifier mod;
-                                if (modObj.has("uuid"))
-                                    mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
+                                if (opStr.equalsIgnoreCase("base"))
+                                {
+                                    if (isTag)
+                                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, value);
+                                    else
+                                        AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
+                                }
                                 else
-                                    mod = new EntityAttributeModifier("ASMod", value, op);
+                                {
+                                    var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
+                                    EntityAttributeModifier mod;
+                                    if (modObj.has("uuid"))
+                                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
+                                    else
+                                        mod = new EntityAttributeModifier("ASMod", value, op);
 
-                                if (isTag)
-                                    AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
-                                else
-                                    AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
+                                    if (isTag)
+                                        AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
+                                    else
+                                        AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
+                                }
                             }
                         }
                     } catch (Exception e) {
