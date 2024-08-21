@@ -23,6 +23,8 @@ import java.io.InputStreamReader;
 import java.util.*;
 
 public class AttributeSetter implements ModInitializer {
+    private static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
+    private static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
 
     @Override
     public void onInitialize() {
@@ -100,7 +102,7 @@ public class AttributeSetter implements ModInitializer {
                     for (var modEntry : entry.getValue().get(slot).entrySet())
                     {
                         modsMap.get(modEntry.getKey()).clear();
-                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier("ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
             }
@@ -111,7 +113,7 @@ public class AttributeSetter implements ModInitializer {
                     for (var modEntry : entry.getValue().get(slot).entrySet())
                     {
                         modsMap.get(modEntry.getKey()).clear();
-                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier("ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
             }
@@ -191,7 +193,7 @@ public class AttributeSetter implements ModInitializer {
                                     if (modObj.has("uuid"))
                                         mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                                     else
-                                        mod = new EntityAttributeModifier("ASMod", value, op);
+                                        mod = new EntityAttributeModifier(DEFAULT_UUID, "ASMod", value, op);
 
                                     if (isTag)
                                         AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);

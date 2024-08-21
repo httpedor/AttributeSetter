@@ -51,7 +51,7 @@ Inside your datapack namespace folder, create a `attributesetter\item` folder, a
   "minecraft:stick": [
     {
       "attribute": "minecraft:generic.attack_damage",
-      "uuid": "0e1c07ef-d456-4567-b748-96b6f84b409e", //optional
+      "uuid": "0e1c07ef-d456-4567-b748-96b6f84b409e", //optional, but you should generate one if you are adding more than one modifier
       "value": 5,
       "operation": "ADDITION", //Optional, default value is ADDITION
       "slot": "mainhand" //Optional, default value is mainhand
@@ -77,6 +77,9 @@ This file should be at `data/example/attributesetter/item/example.json`
 In the example above, all swords have +8 health, and all sticks will deal +5 damage if in the main hand, and 2x health if in the offhand.
 ### Object Key
 Which entity ID will be changed. If the first character is a # the key is treated as a tag. 
+
+### UUID
+This is how minecraft knows which item has which modifier. If you only have one modifier in the item you can ignore this, but if you have more than one, you should generate a UUID for each one. You can use [this site](https://www.uuidgenerator.net/) to generate one. BASE operation doesn't need a UUID.
 
 ### Attribute
 Which attribute should be changed, supports modded attributes.
