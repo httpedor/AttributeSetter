@@ -33,7 +33,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
         AttributeSetterAPI.BASE_ITEM_MODIFIERS.clear();
 
-        System.out.println("Reloadign data: " + resourceLocationJsonElementMap.size());
+        System.out.println("Reloading attributesetter, found: " + resourceLocationJsonElementMap.size());
         for (Map.Entry<ResourceLocation, JsonElement> fileEntry : resourceLocationJsonElementMap.entrySet()) {
             var path = fileEntry.getKey().getPath();
             if (!path.contains("/"))
