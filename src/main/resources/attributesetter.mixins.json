@@ -1,10 +1,13 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "com.httpedor.attributesetter.mixin",
-  "compatibilityLevel": "JAVA_17",
+  "package": "com.httpedro.attributesetter.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "attributesetter.refmap.json",
   "mixins": [
     "LivingEntityMixin"
+  ],
+  "client": [
   ],
   "injectors": {
     "defaultRequire": 1
