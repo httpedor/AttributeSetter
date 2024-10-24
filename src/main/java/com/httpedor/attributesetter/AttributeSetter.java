@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.item.ArmorItem;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.TagKey;
@@ -221,7 +222,7 @@ public class AttributeSetter implements ModInitializer {
                             {
                                 var modObj = modElement.getAsJsonObject();
                                 String opStr;
-                                String slotStr;
+                                String slotStr = null;
                                 if (modObj.has("operation"))
                                     opStr = modObj.get("operation").getAsString();
                                 else
@@ -229,15 +230,22 @@ public class AttributeSetter implements ModInitializer {
 
                                 if (modObj.has("slot"))
                                     slotStr = modObj.get("slot").getAsString();
-                                else
-                                    slotStr = "MAINHAND";
 
                                 var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
                                 var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
                                 var value = modObj.get("value").getAsDouble();
                                 EquipmentSlot slot;
                                 try {
-                                    slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                                    if (slotStr == null)
+                                    {
+                                        var itemEntry = Registries.ITEM.get(id);
+                                        if (itemEntry instanceof ArmorItem ai)
+                                            slot = ai.getSlotType();
+                                        else
+                                            slot = EquipmentSlot.MAINHAND;
+                                    }
+                                    else
+                                        slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
                                 } catch (IllegalArgumentException e)
                                 {
                                     System.out.println("Invalid slot: " + slotStr);
