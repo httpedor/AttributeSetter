@@ -88,4 +88,4 @@ Which attribute should be changed, supports modded attributes.
 Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL` and `BASE`. They are all in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations) except `BASE`, that removes all other modifiers for that attribute and sets the value to the one in the json file.
 
 ### Slot
-Can be `mainhand`, `offhand`, `head`, `chest`, `legs`, `feet`. Default value is `mainhand`
+Can be `mainhand`, `offhand`, `head`, `chest`, `legs`, `feet`. Default value is `mainhand`, if the item's class extends `ArmorItem`, the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot.

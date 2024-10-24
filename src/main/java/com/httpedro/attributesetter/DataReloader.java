@@ -9,6 +9,7 @@ import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.Map;
@@ -98,7 +99,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             {
                                 var modObj = modElement.getAsJsonObject();
                                 String opStr;
-                                String slotStr;
+                                String slotStr = null;
                                 if (modObj.has("operation"))
                                     opStr = modObj.get("operation").getAsString();
                                 else
@@ -106,15 +107,22 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
 
                                 if (modObj.has("slot"))
                                     slotStr = modObj.get("slot").getAsString();
-                                else
-                                    slotStr = "MAINHAND";
 
                                 var id = isTag ? new ResourceLocation(entry.getKey().substring(1)) : new ResourceLocation(entry.getKey());
                                 var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                                 var value = modObj.get("value").getAsDouble();
                                 EquipmentSlot slot;
                                 try {
-                                    slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                                    if (slotStr == null)
+                                    {
+                                        var itemEntry = ForgeRegistries.ITEMS.getValue(id);
+                                        if (itemEntry instanceof ArmorItem ai)
+                                            slot = ai.getEquipmentSlot();
+                                        else
+                                            slot = EquipmentSlot.MAINHAND;
+                                    }
+                                    else
+                                        slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
                                 } catch (IllegalArgumentException e)
                                 {
                                     System.out.println("Invalid slot: " + slotStr);
