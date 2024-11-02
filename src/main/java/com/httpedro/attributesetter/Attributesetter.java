@@ -1,15 +1,20 @@
 package com.httpedro.attributesetter;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.*;
@@ -22,6 +27,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.ItemAttributeModifierEvent;
+import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -33,9 +39,13 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.network.NetworkRegistry;
+import net.minecraftforge.network.PacketDistributor;
+import net.minecraftforge.network.simple.SimpleChannel;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 
 import java.util.HashMap;
@@ -50,20 +60,55 @@ public class Attributesetter {
     static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
 
     // Define mod id in a common place for everything to reference
+    private static final DataReloader dr = new DataReloader();
     public static final String MODID = "attributesetter";
     // Directly reference a slf4j logger
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
+            new ResourceLocation(MODID, "main"),
+            () -> "1.0",
+            s -> true,
+            s -> true
+    );
     public Attributesetter() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
+
+        CHANNEL.registerMessage(0, HashMap.class,
+                (map, buf) -> {
+                    HashMap<ResourceLocation, JsonElement> entries = (HashMap<ResourceLocation, JsonElement>) map;
+                    buf.writeMap(entries, FriendlyByteBuf::writeResourceLocation, (buf1, el) -> buf1.writeUtf(el.toString()));
+                },
+                (buf) -> {
+                    HashMap<ResourceLocation, JsonElement> entries = new HashMap<>();
+                    buf.readMap(i -> entries, FriendlyByteBuf::readResourceLocation, (res) -> JsonParser.parseString(res.readUtf()));
+                    return entries;
+                },
+                (map, contextSupplier) -> {
+                    for (Object obj : map.entrySet())
+                    {
+                        var entry = (Map.Entry<ResourceLocation, JsonElement>) obj;
+                        dr.addEntry(entry.getKey(), entry.getValue());
+                    }
+                }
+        );
     }
 
     @SubscribeEvent
     public void datapackReload(AddReloadListenerEvent e)
     {
-        e.addListener(new DataReloader());
+        e.addListener(dr);
+    }
+
+    @SubscribeEvent
+    public void syncData(OnDatapackSyncEvent e)
+    {
+        for (var p : e.getPlayers())
+        {
+            CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), (Map)dr.entries);
+        }
     }
 
     @SubscribeEvent
@@ -240,6 +285,11 @@ public class Attributesetter {
                     }
                     else if (ttc.getKey().startsWith("attribute.modifier.take.0") && currentSlot != null)
                     {
+                        if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                        {
+                            i++;
+                            continue;
+                        }
                         var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
                         double value = Double.parseDouble(ttc.getArgument(0).getString());
                         if (greenAttributes.containsKey(attrName))
@@ -266,6 +316,11 @@ public class Attributesetter {
                     {
                         if (part.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
                         {
+                            if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                            {
+                                i++;
+                                continue;
+                            }
                             var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
                             greenAttributes.put(attrName, Double.parseDouble(ttc.getArgument(0).getString()));
                             it.remove();
