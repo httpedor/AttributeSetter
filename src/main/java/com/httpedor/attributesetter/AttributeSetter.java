@@ -1,22 +1,32 @@
 package com.httpedor.attributesetter;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.item.v1.ModifyItemAttributeModifiersCallback;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.item.ArmorItem;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.resource.Resource;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.resource.ResourceType;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.PlayerManager;
 import net.minecraft.util.Identifier;
 
 import java.io.InputStream;
@@ -26,6 +36,123 @@ import java.util.*;
 public class AttributeSetter implements ModInitializer {
     private static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
     private static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
+    public static final Identifier PACKET_ID = Identifier.of("attributesetter", "sync");
+    private MinecraftServer server;
+
+    public static List<JsonObject> itemEntries = new ArrayList<>();
+    public static List<JsonObject> entityEntries = new ArrayList<>();
+
+    public static void handleItemJson(JsonObject obj)
+    {
+        for (var entry : obj.entrySet())
+        {
+            var mods = entry.getValue().getAsJsonArray();
+            boolean isTag = entry.getKey().startsWith("#");
+            for (var modElement : mods)
+            {
+                var modObj = modElement.getAsJsonObject();
+                String opStr;
+                String slotStr = null;
+                if (modObj.has("operation"))
+                    opStr = modObj.get("operation").getAsString();
+                else
+                    opStr = "ADDITION";
+
+                if (modObj.has("slot"))
+                    slotStr = modObj.get("slot").getAsString();
+
+                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
+                var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
+                var value = modObj.get("value").getAsDouble();
+                EquipmentSlot slot;
+                try {
+                    if (slotStr == null)
+                    {
+                        var itemEntry = Registries.ITEM.get(id);
+                        if (itemEntry instanceof ArmorItem ai)
+                            slot = ai.getSlotType();
+                        else
+                            slot = EquipmentSlot.MAINHAND;
+                    }
+                    else
+                        slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                } catch (IllegalArgumentException e)
+                {
+                    System.out.println("Invalid slot: " + slotStr);
+                    continue;
+                }
+                if (attr == null)
+                {
+                    System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
+                    continue;
+                }
+                if (opStr.equalsIgnoreCase("base"))
+                {
+                    if (isTag)
+                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, value);
+                    else
+                        AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
+                }
+                else
+                {
+                    var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
+                    EntityAttributeModifier mod;
+                    if (modObj.has("uuid"))
+                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
+                    else
+                        mod = new EntityAttributeModifier("ASMod", value, op);
+
+                    if (isTag)
+                        AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
+                    else
+                        AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
+                }
+            }
+        }
+    }
+    public static void handleEntityJson(JsonObject obj)
+    {
+        for (var entry : obj.entrySet())
+        {
+            var mods = entry.getValue().getAsJsonArray();
+            boolean isTag = entry.getKey().startsWith("#");
+            for (var modElement : mods)
+            {
+                var modObj = modElement.getAsJsonObject();
+                var opStr = modObj.get("operation").getAsString();
+                var isBase = opStr.toLowerCase().equals("base");
+                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
+                var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
+                var value = modObj.get("value").getAsDouble();
+                if (attr == null)
+                {
+                    System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
+                    continue;
+                }
+                if (isBase)
+                {
+                    if (isTag)
+                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, modObj.get("value").getAsDouble());
+                    else
+                        AttributeSetterAPI.registerEntityBaseAttribute(id, attr, modObj.get("value").getAsDouble());
+                }
+                else
+                {
+                    var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
+                    EntityAttributeModifier mod;
+                    if (modObj.has("uuid"))
+                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
+                    else
+                        mod = new EntityAttributeModifier(DEFAULT_UUID, "ASMod", value, op);
+
+                    if (isTag)
+                        AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
+                    else
+                        AttributeSetterAPI.registerEntityAttributeModifier(id, attr, mod);
+                }
+            }
+        }
+    }
 
     @Override
     public void onInitialize() {
@@ -143,6 +270,25 @@ public class AttributeSetter implements ModInitializer {
             }
         });
 
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            this.server = server;
+        });
+
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            PacketByteBuf buf = PacketByteBufs.create();
+            buf.writeInt(entityEntries.size());
+            for (var entry : entityEntries)
+            {
+                buf.writeString(entry.toString());
+            }
+            buf.writeInt(itemEntries.size());
+            for (var entry : itemEntries)
+            {
+                buf.writeString(entry.toString());
+            }
+            sender.sendPacket(PACKET_ID, buf);
+        });
+
 
         ResourceManagerHelper.get(ResourceType.SERVER_DATA).registerReloadListener(new SimpleSynchronousResourceReloadListener() {
             @Override
@@ -152,6 +298,8 @@ public class AttributeSetter implements ModInitializer {
 
             @Override
             public void reload(ResourceManager manager) {
+                entityEntries.clear();
+                itemEntries.clear();
                 AttributeSetterAPI.ENTITY_MODIFIERS.clear();
                 AttributeSetterAPI.BASE_MODIFIERS.clear();
                 AttributeSetterAPI.TAG_MODIFIERS.clear();
@@ -162,47 +310,9 @@ public class AttributeSetter implements ModInitializer {
                 {
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
-                        JsonObject obj = (JsonObject) JsonParser.parseReader(reader);
-                        for (var entry : obj.entrySet())
-                        {
-                            var mods = entry.getValue().getAsJsonArray();
-                            boolean isTag = entry.getKey().startsWith("#");
-                            for (var modElement : mods)
-                            {
-                                var modObj = modElement.getAsJsonObject();
-                                var opStr = modObj.get("operation").getAsString();
-                                var isBase = opStr.toLowerCase().equals("base");
-                                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
-                                var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
-                                var value = modObj.get("value").getAsDouble();
-                                if (attr == null)
-                                {
-                                    System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
-                                    continue;
-                                }
-                                if (isBase)
-                                {
-                                    if (isTag)
-                                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, modObj.get("value").getAsDouble());
-                                    else
-                                        AttributeSetterAPI.registerEntityBaseAttribute(id, attr, modObj.get("value").getAsDouble());
-                                }
-                                else
-                                {
-                                    var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                    EntityAttributeModifier mod;
-                                    if (modObj.has("uuid"))
-                                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
-                                    else
-                                        mod = new EntityAttributeModifier(DEFAULT_UUID, "ASMod", value, op);
-
-                                    if (isTag)
-                                        AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
-                                    else
-                                        AttributeSetterAPI.registerEntityAttributeModifier(id, attr, mod);
-                                }
-                            }
-                        }
+                        JsonObject obj = JsonParser.parseReader(reader).getAsJsonObject();
+                        entityEntries.add(obj);
+                        handleEntityJson(obj);
                     } catch (Exception e) {
                         System.out.println("Failed to read " + resEntry.getKey());
                         e.printStackTrace();
@@ -214,76 +324,26 @@ public class AttributeSetter implements ModInitializer {
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
                         JsonObject obj = (JsonObject) JsonParser.parseReader(reader);
-                        for (var entry : obj.entrySet())
-                        {
-                            var mods = entry.getValue().getAsJsonArray();
-                            boolean isTag = entry.getKey().startsWith("#");
-                            for (var modElement : mods)
-                            {
-                                var modObj = modElement.getAsJsonObject();
-                                String opStr;
-                                String slotStr = null;
-                                if (modObj.has("operation"))
-                                    opStr = modObj.get("operation").getAsString();
-                                else
-                                    opStr = "ADDITION";
-
-                                if (modObj.has("slot"))
-                                    slotStr = modObj.get("slot").getAsString();
-
-                                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
-                                var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
-                                var value = modObj.get("value").getAsDouble();
-                                EquipmentSlot slot;
-                                try {
-                                    if (slotStr == null)
-                                    {
-                                        var itemEntry = Registries.ITEM.get(id);
-                                        if (itemEntry instanceof ArmorItem ai)
-                                            slot = ai.getSlotType();
-                                        else
-                                            slot = EquipmentSlot.MAINHAND;
-                                    }
-                                    else
-                                        slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
-                                } catch (IllegalArgumentException e)
-                                {
-                                    System.out.println("Invalid slot: " + slotStr);
-                                    continue;
-                                }
-                                if (attr == null)
-                                {
-                                    System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
-                                    continue;
-                                }
-                                if (opStr.equalsIgnoreCase("base"))
-                                {
-                                    if (isTag)
-                                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, value);
-                                    else
-                                        AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
-                                }
-                                else
-                                {
-                                    var op = EntityAttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                    EntityAttributeModifier mod;
-                                    if (modObj.has("uuid"))
-                                        mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
-                                    else
-                                        mod = new EntityAttributeModifier("ASMod", value, op);
-
-                                    if (isTag)
-                                        AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
-                                    else
-                                        AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
-                                }
-                            }
-                        }
+                        itemEntries.add(obj);
+                        handleItemJson(obj);
                     } catch (Exception e) {
                         System.out.println("Failed to read " + resEntry.getKey());
                         e.printStackTrace();
                     }
                 }
+
+                if (server == null)
+                    return;
+
+                var buf = PacketByteBufs.create();
+                buf.writeInt(entityEntries.size());
+                for (var entry : entityEntries)
+                    buf.writeString(entry.toString());
+                buf.writeInt(itemEntries.size());
+                for (var entry : itemEntries)
+                    buf.writeString(entry.toString());
+                for (var player : PlayerLookup.all(server))
+                    ServerPlayNetworking.send(player, PACKET_ID, buf);
             }
         });
     }

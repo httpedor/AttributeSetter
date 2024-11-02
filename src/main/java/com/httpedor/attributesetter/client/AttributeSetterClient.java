@@ -1,12 +1,17 @@
 package com.httpedor.attributesetter.client;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.httpedor.attributesetter.AttributeSetter;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.item.v1.ItemTooltipCallback;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableTextContent;
 import net.minecraft.util.Formatting;
+import org.apache.commons.lang3.math.NumberUtils;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -58,6 +63,11 @@ public class AttributeSetterClient implements ClientModInitializer {
                     }
                     else if (ttc.getKey().startsWith("attribute.modifier.take.0") && currentSlot != null)
                     {
+                        if (!NumberUtils.isCreatable(ttc.getArg(0).getString()))
+                        {
+                            i++;
+                            continue;
+                        }
                         var attrName = ((TranslatableTextContent)((MutableText)ttc.getArg(1)).getContent()).getKey();
                         double value = Double.parseDouble(ttc.getArg(0).getString());
                         if (greenAttributes.containsKey(attrName))
@@ -84,6 +94,11 @@ public class AttributeSetterClient implements ClientModInitializer {
                     {
                         if (part.getContent() instanceof TranslatableTextContent ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
                         {
+                            if (!NumberUtils.isCreatable(ttc.getArg(0).getString()))
+                            {
+                                i++;
+                                continue;
+                            }
                             var attrName = ((TranslatableTextContent)((MutableText)ttc.getArg(1)).getContent()).getKey();
                             greenAttributes.put(attrName, Double.parseDouble(ttc.getArg(0).getString()));
                             it.remove();
@@ -100,6 +115,24 @@ public class AttributeSetterClient implements ClientModInitializer {
                 var line = Text.literal(" ").append(Text.translatable("attribute.modifier.equals.0", Text.literal(ItemStack.MODIFIER_FORMAT.format(value)).formatted(Formatting.DARK_GREEN), Text.translatable(attrName).formatted(Formatting.DARK_GREEN)));
                 lines.add(mainhandSlotIndex + i + 1, line);
                 i++;
+            }
+        });
+
+
+        ClientPlayNetworking.registerGlobalReceiver(AttributeSetter.PACKET_ID, (client, handler, buf, responseSender) -> {
+            int entitySize = buf.readInt();
+            for (int i = 0; i < entitySize; i++)
+            {
+                var obj = (JsonObject) JsonParser.parseString(buf.readString());
+                AttributeSetter.entityEntries.add(obj);
+                AttributeSetter.handleEntityJson(obj);
+            }
+            int itemSize = buf.readInt();
+            for (int i = 0; i < itemSize; i++)
+            {
+                var obj = (JsonObject) JsonParser.parseString(buf.readString());
+                AttributeSetter.itemEntries.add(obj);
+                AttributeSetter.handleItemJson(obj);
             }
         });
     }
