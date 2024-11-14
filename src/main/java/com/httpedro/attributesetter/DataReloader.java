@@ -3,6 +3,7 @@ package com.httpedro.attributesetter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import com.httpedro.attributesetter.compat.CuriosCompat;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
@@ -10,6 +11,7 @@ import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ArmorItem;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.HashMap;
@@ -91,18 +93,21 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
+                            if (ModList.get().isLoaded("curios") && CuriosCompat.shouldCurioHandle(entry.getKey(), modObj))
+                            {
+                                return;
+                            }
                             String opStr;
-                            String slotStr = null;
                             if (modObj.has("operation"))
                                 opStr = modObj.get("operation").getAsString();
                             else
                                 opStr = "ADDITION";
 
+                            String slotStr = null;
                             if (modObj.has("slot"))
                                 slotStr = modObj.get("slot").getAsString();
 
                             var id = isTag ? new ResourceLocation(entry.getKey().substring(1)) : new ResourceLocation(entry.getKey());
-                            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                             var value = modObj.get("value").getAsDouble();
                             EquipmentSlot slot;
                             try {
@@ -115,12 +120,16 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                         slot = EquipmentSlot.MAINHAND;
                                 }
                                 else
+                                {
                                     slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                                }
                             } catch (IllegalArgumentException e)
                             {
                                 System.out.println("Invalid slot: " + slotStr);
                                 continue;
                             }
+
+                            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                             if (attr == null)
                             {
                                 System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
@@ -129,7 +138,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             if (opStr.equalsIgnoreCase("base"))
                             {
                                 if (isTag)
-                                    AttributeSetterAPI.registerTagBaseAttribute(id, attr, value);
+                                    AttributeSetterAPI.registerTagItemBaseAttribute(id, attr, value, slot);
                                 else
                                     AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
                             }
@@ -140,7 +149,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 if (modObj.has("uuid"))
                                     mod = new AttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                                 else
-                                    mod = new AttributeModifier("ASMod", value, op);
+                                    mod = new AttributeModifier(DEFAULT_UUID, "ASMod", value, op);
 
                                 if (isTag)
                                     AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
