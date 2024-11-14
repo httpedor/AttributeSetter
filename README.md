@@ -84,7 +84,7 @@ Inside your datapack namespace folder, create a `attributesetter\item` folder, a
       "value": 0.5
       "operation": "MULTIPLY_BASE",
       "slot": "necklace" //Curios slot
-    ]
+    }
   ]
 }
 ```
