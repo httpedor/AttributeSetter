@@ -3,6 +3,7 @@ package com.httpedor.attributesetter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.httpedor.attributesetter.compat.TrinketsCompat;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -14,6 +15,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
@@ -34,8 +36,8 @@ import java.io.InputStreamReader;
 import java.util.*;
 
 public class AttributeSetter implements ModInitializer {
-    private static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
-    private static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
+    public static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
+    public static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
     public static final Identifier PACKET_ID = Identifier.of("attributesetter", "sync");
     private MinecraftServer server;
 
@@ -89,7 +91,7 @@ public class AttributeSetter implements ModInitializer {
                 if (opStr.equalsIgnoreCase("base"))
                 {
                     if (isTag)
-                        AttributeSetterAPI.registerTagBaseAttribute(id, attr, value);
+                        AttributeSetterAPI.registerTagItemBaseAttribute(id, attr, value, slot);
                     else
                         AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
                 }
