@@ -2,6 +2,7 @@ package com.httpedro.attributesetter;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
+import com.httpedro.attributesetter.compat.CuriosCompat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -33,6 +34,7 @@ import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
@@ -56,8 +58,8 @@ import java.util.UUID;
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod(Attributesetter.MODID)
 public class Attributesetter {
-    static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
-    static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
+    public static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
+    public static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
 
     // Define mod id in a common place for everything to reference
     private static final DataReloader dr = new DataReloader();
@@ -75,6 +77,8 @@ public class Attributesetter {
 
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
+        if (ModList.get().isLoaded("curios"))
+            MinecraftForge.EVENT_BUS.register(new CuriosCompat());
 
         CHANNEL.registerMessage(0, HashMap.class,
                 (map, buf) -> {
