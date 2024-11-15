@@ -269,6 +269,11 @@ public class Attributesetter {
                     }
                     else if (ttc.getKey().startsWith("attribute.modifier.plus.0") && currentSlot != null)
                     {
+                        if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                        {
+                            i++;
+                            continue;
+                        }
                         var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
                         double value = Double.parseDouble(ttc.getArgument(0).getString());
                         if (greenAttributes.containsKey(attrName))
