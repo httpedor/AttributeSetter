@@ -43,6 +43,11 @@ public class AttributeSetterClient implements ClientModInitializer {
                     }
                     else if (ttc.getKey().startsWith("attribute.modifier.plus.0") && currentSlot != null)
                     {
+                        if (!NumberUtils.isCreatable(ttc.getArg(0).getString()))
+                        {
+                            i++;
+                            continue;
+                        }
                         var attrName = ((TranslatableTextContent)((MutableText)ttc.getArg(1)).getContent()).getKey();
                         double value = Double.parseDouble(ttc.getArg(0).getString());
                         if (greenAttributes.containsKey(attrName))
