@@ -54,7 +54,7 @@ Inside your datapack namespace folder, create a `attributesetter\item` folder, a
       "uuid": "0e1c07ef-d456-4567-b748-96b6f84b409e", //optional, but you should generate one if you are adding more than one modifier
       "value": 5,
       "operation": "ADDITION", //Optional, default value is ADDITION
-      "slot": "mainhand" //Optional, default value is mainhand
+      "slot": "mainhand" //Optional, default value is the appropriate slot if it's an armor, or mainhand if it's not. Supports CuriosAPI(not trinkets)
     },
     {
       "attribute": "minecraft:generic.max_health",
@@ -77,6 +77,14 @@ Inside your datapack namespace folder, create a `attributesetter\item` folder, a
       //Don't need the 'slot', it recognizes the item is equipable only in the chestplate slot and assigns the correct slot
       //If you want to, you can still override the slot
     }
+  ],
+  "somemod:necklace": [
+    {
+      "attribute": "minecraft:generic.attack_damage",
+      "value": 0.5
+      "operation": "MULTIPLY_BASE",
+      "slot": "necklace" //Curios slot
+    }
   ]
 }
 ```
@@ -96,4 +104,4 @@ Which attribute should be changed, supports modded attributes.
 Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL` and `BASE`. They are all in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations) except `BASE`, that removes all other modifiers for that attribute and sets the value to the one in the json file.
 
 ### Slot
-Can be mainhand, offhand, head, chest, legs, feet. Default value is mainhand, if the item's class extends ArmorItem, the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot.
+Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot. Default value is mainhand, if the item's class extends ArmorItem, the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot. You still have to specify the Curios slot.
