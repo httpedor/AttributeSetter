@@ -13,6 +13,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -34,7 +35,9 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         var path = res.getPath();
         if (!path.contains("/"))
             return;
-        var mode = path.split("/")[0];
+        var splitted = path.split("/");
+        var mode = splitted[0];
+        var fName = splitted[1];
         var obj = jsonElement.getAsJsonObject();
         try {
             switch (mode)
@@ -48,9 +51,16 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
-                            var opStr = modObj.get("operation").getAsString();
-                            var isBase = opStr.toLowerCase().equals("base");
-                            var id = isTag ? new ResourceLocation(entry.getKey().substring(1)) : new ResourceLocation(entry.getKey());
+                            String opStr;
+                            if (!modObj.has("operation"))
+                                opStr = "BASE";
+                            else
+                                opStr = modObj.get("operation").getAsString();
+                            var isBase = opStr.equalsIgnoreCase("base");
+                            var idStr = entry.getKey();
+                            if (isTag)
+                                idStr = idStr.substring(1);
+                            var id = idStr.contains(":") ? new ResourceLocation(idStr) : new ResourceLocation(fName, idStr);
                             var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                             var value = modObj.get("value").getAsDouble();
                             if (attr == null)
@@ -107,7 +117,10 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             if (modObj.has("slot"))
                                 slotStr = modObj.get("slot").getAsString();
 
-                            var id = isTag ? new ResourceLocation(entry.getKey().substring(1)) : new ResourceLocation(entry.getKey());
+                            var idStr = entry.getKey();
+                            if (isTag)
+                                idStr = idStr.substring(1);
+                            var id = idStr.contains(":") ? new ResourceLocation(idStr) : new ResourceLocation(fName, idStr);
                             var value = modObj.get("value").getAsDouble();
                             EquipmentSlot slot;
                             try {
@@ -168,7 +181,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
     }
 
     @Override
-    protected void apply(Map<ResourceLocation, JsonElement> resourceLocationJsonElementMap, ResourceManager resourceManager, ProfilerFiller profilerFiller) {
+    protected void apply(Map<ResourceLocation, JsonElement> resourceLocationJsonElementMap, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profilerFiller) {
         entries.clear();
         AttributeSetterAPI.ENTITY_MODIFIERS.clear();
         AttributeSetterAPI.BASE_MODIFIERS.clear();
