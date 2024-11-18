@@ -41,10 +41,10 @@ public class AttributeSetter implements ModInitializer {
     public static final Identifier PACKET_ID = Identifier.of("attributesetter", "sync");
     private MinecraftServer server;
 
-    public static List<JsonObject> itemEntries = new ArrayList<>();
-    public static List<JsonObject> entityEntries = new ArrayList<>();
+    public static Map<String, JsonObject> itemEntries = new HashMap<>();
+    public static Map<String, JsonObject> entityEntries = new HashMap<>();
 
-    public static void handleItemJson(JsonObject obj)
+    public static void handleItemJson(String defaultNamespace, JsonObject obj)
     {
         for (var entry : obj.entrySet())
         {
@@ -63,7 +63,10 @@ public class AttributeSetter implements ModInitializer {
                 if (modObj.has("slot"))
                     slotStr = modObj.get("slot").getAsString();
 
-                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
+                var idStr = entry.getKey();
+                if (isTag)
+                    idStr = idStr.substring(1);
+                var id = idStr.contains(":") ? new Identifier(idStr) : new Identifier(defaultNamespace, idStr);
                 var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
                 var value = modObj.get("value").getAsDouble();
                 EquipmentSlot slot;
@@ -112,7 +115,7 @@ public class AttributeSetter implements ModInitializer {
             }
         }
     }
-    public static void handleEntityJson(JsonObject obj)
+    public static void handleEntityJson(String defaultNamespace, JsonObject obj)
     {
         for (var entry : obj.entrySet())
         {
@@ -121,9 +124,16 @@ public class AttributeSetter implements ModInitializer {
             for (var modElement : mods)
             {
                 var modObj = modElement.getAsJsonObject();
-                var opStr = modObj.get("operation").getAsString();
+                String opStr;
+                if (!modObj.has("operation"))
+                    opStr = "BASE";
+                else
+                    opStr = modObj.get("operation").getAsString();
                 var isBase = opStr.toLowerCase().equals("base");
-                var id = isTag ? new Identifier(entry.getKey().substring(1)) : new Identifier(entry.getKey());
+                var idStr = entry.getKey();
+                if (isTag)
+                    idStr = idStr.substring(1);
+                var id = idStr.contains(":") ? new Identifier(idStr) : new Identifier(defaultNamespace, idStr);
                 var attr = Registries.ATTRIBUTE.get(new Identifier(modObj.get("attribute").getAsString()));
                 var value = modObj.get("value").getAsDouble();
                 if (attr == null)
@@ -277,18 +287,7 @@ public class AttributeSetter implements ModInitializer {
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            PacketByteBuf buf = PacketByteBufs.create();
-            buf.writeInt(entityEntries.size());
-            for (var entry : entityEntries)
-            {
-                buf.writeString(entry.toString());
-            }
-            buf.writeInt(itemEntries.size());
-            for (var entry : itemEntries)
-            {
-                buf.writeString(entry.toString());
-            }
-            sender.sendPacket(PACKET_ID, buf);
+            sender.sendPacket(PACKET_ID, createPacketBuf());
         });
 
 
@@ -310,11 +309,13 @@ public class AttributeSetter implements ModInitializer {
                 AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
                 for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter/entity", path -> true).entrySet())
                 {
+                    String fPath = resEntry.getKey().getPath();
+                    String fName = fPath.substring(fPath.lastIndexOf('/')+1, fPath.lastIndexOf('.'));
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
                         JsonObject obj = JsonParser.parseReader(reader).getAsJsonObject();
-                        entityEntries.add(obj);
-                        handleEntityJson(obj);
+                        entityEntries.put(fName, obj);
+                        handleEntityJson(fName, obj);
                     } catch (Exception e) {
                         System.out.println("Failed to read " + resEntry.getKey());
                         e.printStackTrace();
@@ -323,11 +324,13 @@ public class AttributeSetter implements ModInitializer {
 
                 for (Map.Entry<Identifier, Resource> resEntry : manager.findResources("attributesetter/item", path -> true).entrySet())
                 {
+                    String fPath = resEntry.getKey().getPath();
+                    String fName = fPath.substring(fPath.lastIndexOf('/')+1, fPath.lastIndexOf('.'));
                     try (InputStream stream = manager.getResource(resEntry.getKey()).get().getInputStream()) {
                         InputStreamReader reader = new InputStreamReader(stream);
                         JsonObject obj = (JsonObject) JsonParser.parseReader(reader);
-                        itemEntries.add(obj);
-                        handleItemJson(obj);
+                        itemEntries.put(fName, obj);
+                        handleItemJson(fName, obj);
                     } catch (Exception e) {
                         System.out.println("Failed to read " + resEntry.getKey());
                         e.printStackTrace();
@@ -337,16 +340,27 @@ public class AttributeSetter implements ModInitializer {
                 if (server == null)
                     return;
 
-                var buf = PacketByteBufs.create();
-                buf.writeInt(entityEntries.size());
-                for (var entry : entityEntries)
-                    buf.writeString(entry.toString());
-                buf.writeInt(itemEntries.size());
-                for (var entry : itemEntries)
-                    buf.writeString(entry.toString());
+                PacketByteBuf buf = createPacketBuf();
                 for (var player : PlayerLookup.all(server))
                     ServerPlayNetworking.send(player, PACKET_ID, buf);
             }
         });
+    }
+
+    private static PacketByteBuf createPacketBuf() {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeInt(entityEntries.size());
+        for (var entry : entityEntries.entrySet())
+        {
+            buf.writeString(entry.getKey());
+            buf.writeString(entry.getValue().toString());
+        }
+        buf.writeInt(itemEntries.size());
+        for (var entry : itemEntries.entrySet())
+        {
+            buf.writeString(entry.getKey());
+            buf.writeString(entry.getValue().toString());
+        }
+        return buf;
     }
 }

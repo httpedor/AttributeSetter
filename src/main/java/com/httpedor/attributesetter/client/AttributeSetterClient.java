@@ -57,7 +57,7 @@ public class AttributeSetterClient implements ClientModInitializer {
                         }
                         else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
                         {
-                            greenAttributes.put(attrName, value);
+                            greenAttributes.put(attrName, value+1);
                             it.remove();
                         }
                         else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
@@ -82,7 +82,7 @@ public class AttributeSetterClient implements ClientModInitializer {
                         }
                         else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
                         {
-                            greenAttributes.put(attrName, -value);
+                            greenAttributes.put(attrName, -value+1);
                             it.remove();
                         }
                         else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
@@ -128,16 +128,18 @@ public class AttributeSetterClient implements ClientModInitializer {
             int entitySize = buf.readInt();
             for (int i = 0; i < entitySize; i++)
             {
+                String fName = buf.readString();
                 var obj = (JsonObject) JsonParser.parseString(buf.readString());
-                AttributeSetter.entityEntries.add(obj);
-                AttributeSetter.handleEntityJson(obj);
+                AttributeSetter.entityEntries.put(fName, obj);
+                AttributeSetter.handleEntityJson(fName, obj);
             }
             int itemSize = buf.readInt();
             for (int i = 0; i < itemSize; i++)
             {
+                String fName = buf.readString();
                 var obj = (JsonObject) JsonParser.parseString(buf.readString());
-                AttributeSetter.itemEntries.add(obj);
-                AttributeSetter.handleItemJson(obj);
+                AttributeSetter.itemEntries.put(fName, obj);
+                AttributeSetter.handleItemJson(fName, obj);
             }
         });
     }
