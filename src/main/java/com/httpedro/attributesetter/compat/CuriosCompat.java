@@ -40,36 +40,18 @@ public class CuriosCompat {
 
 
         String slot;
-        boolean isCuriosSlot;
         if (json.has("slot"))
         {
             slot = json.get("slot").getAsString();
-            isCuriosSlot = CuriosApi.getSlot(slot, false).isPresent();
+            if (!slot.startsWith("curio:"))
+                return false;
+            else
+                slot = slot.substring(slot.indexOf(':')+1);
         }
         else
         {
             return false;
-            /*
-            var itemEntry = ForgeRegistries.ITEMS.getValue(id);
-            if (itemEntry == null)
-            {
-                System.out.println("Invalid item: " + id);
-                return true;
-            }
-
-            var slots = CuriosApi.getCuriosHelper().getCurioTags(itemEntry);
-            if (slots.isEmpty())
-            {
-                return false;
-            }
-
-            isCuriosSlot = true;
-            slot = slots.iterator().next();
-             */
         }
-
-        if (!isCuriosSlot)
-            return false;
 
         //Now to actually registering it
         var value = json.get("value").getAsDouble();

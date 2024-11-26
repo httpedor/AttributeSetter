@@ -65,7 +65,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             var value = modObj.get("value").getAsDouble();
                             if (attr == null)
                             {
-                                System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
+                                Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
                                 continue;
                             }
                             if (isBase)
@@ -105,7 +105,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             var modObj = modElement.getAsJsonObject();
                             if (ModList.get().isLoaded("curios") && CuriosCompat.shouldCurioHandle(entry.getKey(), modObj))
                             {
-                                return;
+                                continue;
                             }
                             String opStr;
                             if (modObj.has("operation"))
@@ -138,14 +138,14 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 }
                             } catch (IllegalArgumentException e)
                             {
-                                System.out.println("Invalid slot: " + slotStr);
+                                Attributesetter.LOGGER.error("Invalid slot: {}", slotStr);
                                 continue;
                             }
 
                             var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                             if (attr == null)
                             {
-                                System.out.println("Failed to find attribute " + modObj.get("attribute").getAsString());
+                                Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
                                 continue;
                             }
                             if (opStr.equalsIgnoreCase("base"))
@@ -191,7 +191,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
         AttributeSetterAPI.BASE_ITEM_MODIFIERS.clear();
 
-        System.out.println("Reloading attributesetter, found: " + resourceLocationJsonElementMap.size() + " files");
+        Attributesetter.LOGGER.info("Reloading attributesetter, found {} files", resourceLocationJsonElementMap.size());
         for (Map.Entry<ResourceLocation, JsonElement> fileEntry : resourceLocationJsonElementMap.entrySet()) {
             addEntry(fileEntry.getKey(), fileEntry.getValue());
         }

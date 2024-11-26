@@ -26,6 +26,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
@@ -49,7 +50,7 @@ public class Attributesetter {
     private static final DataReloader dr = new DataReloader();
     public static final String MODID = "attributesetter";
     // Directly reference a slf4j logger
-    private static final Logger LOGGER = LogUtils.getLogger();
+    public static final Logger LOGGER = LogUtils.getLogger();
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(MODID, "main"),
             () -> "1.0",
@@ -58,30 +59,36 @@ public class Attributesetter {
     );
     public Attributesetter() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+        modEventBus.addListener(this::commonSetup);
 
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
         if (ModList.get().isLoaded("curios"))
             MinecraftForge.EVENT_BUS.register(new CuriosCompat());
+    }
 
-        CHANNEL.registerMessage(0, HashMap.class,
-                (map, buf) -> {
-                    HashMap<ResourceLocation, JsonElement> entries = (HashMap<ResourceLocation, JsonElement>) map;
-                    buf.writeMap(entries, FriendlyByteBuf::writeResourceLocation, (buf1, el) -> buf1.writeUtf(el.toString()));
-                },
-                (buf) -> {
-                    HashMap<ResourceLocation, JsonElement> entries = new HashMap<>();
-                    buf.readMap(i -> entries, FriendlyByteBuf::readResourceLocation, (res) -> JsonParser.parseString(res.readUtf()));
-                    return entries;
-                },
-                (map, contextSupplier) -> {
-                    for (Object obj : map.entrySet())
-                    {
-                        var entry = (Map.Entry<ResourceLocation, JsonElement>) obj;
-                        dr.addEntry(entry.getKey(), entry.getValue());
+    public void commonSetup(FMLCommonSetupEvent e)
+    {
+        e.enqueueWork(() -> {
+            CHANNEL.registerMessage(0, HashMap.class,
+                    (map, buf) -> {
+                        HashMap<ResourceLocation, JsonElement> entries = (HashMap<ResourceLocation, JsonElement>) map;
+                        buf.writeMap(entries, FriendlyByteBuf::writeResourceLocation, (buf1, el) -> buf1.writeUtf(el.toString()));
+                    },
+                    (buf) -> {
+                        HashMap<ResourceLocation, JsonElement> entries = new HashMap<>();
+                        buf.readMap(i -> entries, FriendlyByteBuf::readResourceLocation, (res) -> JsonParser.parseString(res.readUtf()));
+                        return entries;
+                    },
+                    (map, contextSupplier) -> {
+                        for (Object obj : map.entrySet())
+                        {
+                            var entry = (Map.Entry<ResourceLocation, JsonElement>) obj;
+                            dr.addEntry(entry.getKey(), entry.getValue());
+                        }
                     }
-                }
-        );
+            );
+        });
     }
 
     @SubscribeEvent
@@ -95,7 +102,7 @@ public class Attributesetter {
     {
         for (var p : e.getPlayers())
         {
-            CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), (Map)dr.entries);
+            CHANNEL.send(PacketDistributor.PLAYER.with(() -> p), dr.entries);
         }
     }
 
