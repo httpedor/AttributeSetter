@@ -16,6 +16,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
@@ -30,6 +31,7 @@ import net.minecraft.resource.ResourceType;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.PlayerManager;
 import net.minecraft.util.Identifier;
+import net.minecraft.world.World;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -166,69 +168,74 @@ public class AttributeSetter implements ModInitializer {
         }
     }
 
+    public static void onEntitySpawn(Entity entity, World world)
+    {
+        if (world.isClient) return;
+        if (!(entity instanceof LivingEntity))
+            return;
+        LivingEntity le = (LivingEntity) entity;
+        if (((ASLivingEntity)le).as$isLoaded())
+            return;
+
+        ((ASLivingEntity) le).as$setLoaded();
+        var entityType = Registries.ENTITY_TYPE.getId(entity.getType());
+        var id = new Identifier(entityType.getNamespace(), entityType.getPath());
+        for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
+        {
+            if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
+            {
+                for (var modEntry : entry.getValue().entrySet())
+                {
+                    var attrInstance = le.getAttributeInstance(modEntry.getKey());
+                    if (attrInstance != null)
+                        attrInstance.setBaseValue(modEntry.getValue());
+                }
+            }
+        }
+
+        var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
+        if (baseMods != null)
+        {
+            for (var entry : baseMods.entrySet())
+            {
+                var attrInstance = le.getAttributeInstance(entry.getKey());
+                if (attrInstance != null)
+                    attrInstance.setBaseValue(entry.getValue());
+            }
+        }
+
+        for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
+        {
+            if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
+            {
+                for (var modEntry : entry.getValue().entrySet())
+                {
+                    var attrInstance = le.getAttributeInstance(modEntry.getKey());
+                    if (attrInstance != null)
+                        attrInstance.addPersistentModifier(modEntry.getValue());
+                }
+            }
+        }
+
+        var modifiers = AttributeSetterAPI.ENTITY_MODIFIERS.getOrDefault(id, null);
+        if (modifiers != null)
+        {
+            for (var entry : modifiers.entrySet())
+            {
+                var attrInstance = le.getAttributeInstance(entry.getKey());
+                if (attrInstance != null)
+                    attrInstance.addPersistentModifier(entry.getValue());
+            }
+        }
+
+        le.setHealth(le.getMaxHealth());
+    }
+
     @Override
     public void onInitialize() {
 
         ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
-            if (world.isClient) return;
-            if (!(entity instanceof LivingEntity))
-                return;
-            LivingEntity le = (LivingEntity) entity;
-            if (((ASLivingEntity)le).as$isLoaded())
-                return;
-
-            ((ASLivingEntity) le).as$setLoaded();
-            var entityType = Registries.ENTITY_TYPE.getId(entity.getType());
-            var id = new Identifier(entityType.getNamespace(), entityType.getPath());
-            for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
-            {
-                if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
-                {
-                    for (var modEntry : entry.getValue().entrySet())
-                    {
-                        var attrInstance = le.getAttributeInstance(modEntry.getKey());
-                        if (attrInstance != null)
-                            attrInstance.setBaseValue(modEntry.getValue());
-                    }
-                }
-            }
-
-            var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
-            if (baseMods != null)
-            {
-                for (var entry : baseMods.entrySet())
-                {
-                    var attrInstance = le.getAttributeInstance(entry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.setBaseValue(entry.getValue());
-                }
-            }
-
-            for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
-            {
-                if (le.getType().isIn(TagKey.of(RegistryKeys.ENTITY_TYPE, entry.getKey())))
-                {
-                    for (var modEntry : entry.getValue().entrySet())
-                    {
-                        var attrInstance = le.getAttributeInstance(modEntry.getKey());
-                        if (attrInstance != null)
-                            attrInstance.addPersistentModifier(modEntry.getValue());
-                    }
-                }
-            }
-
-            var modifiers = AttributeSetterAPI.ENTITY_MODIFIERS.getOrDefault(id, null);
-            if (modifiers != null)
-            {
-                for (var entry : modifiers.entrySet())
-                {
-                    var attrInstance = le.getAttributeInstance(entry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.addPersistentModifier(entry.getValue());
-                }
-            }
-
-            le.setHealth(le.getMaxHealth());
+            onEntitySpawn(entity, world);
         });
 
         ModifyItemAttributeModifiersCallback.EVENT.register((stack, slot, modsMap) -> {
