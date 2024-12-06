@@ -20,7 +20,9 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.ItemAttributeModifierEvent;
 import net.minecraftforge.event.OnDatapackSyncEvent;
+import net.minecraftforge.event.entity.EntityAttributeModificationEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -163,21 +165,13 @@ public class Attributesetter {
 
     }
 
-    @SubscribeEvent
-    public void onEntityJoinWorld(EntityJoinLevelEvent e)
+    private void processEntity(LivingEntity le)
     {
-        var world = e.getLevel();
-        var entity = e.getEntity();
-        if (world.isClientSide)
-            return;
-        if (!(entity instanceof LivingEntity))
-            return;
-        LivingEntity le = (LivingEntity) entity;
         if (((ASLivingEntity)le).as$isLoaded())
             return;
 
         ((ASLivingEntity)le).as$setLoaded();
-        var entityType = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+        var entityType = ForgeRegistries.ENTITY_TYPES.getKey(le.getType());
         var id = new ResourceLocation(entityType.getNamespace(), entityType.getPath());
         for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
         {
@@ -228,7 +222,29 @@ public class Attributesetter {
         }
 
         le.setHealth(le.getMaxHealth());
+    }
 
+    @SubscribeEvent
+    public void onEntityJoinWorld(EntityJoinLevelEvent e)
+    {
+        var world = e.getLevel();
+        var entity = e.getEntity();
+        if (world.isClientSide)
+            return;
+        if (!(entity instanceof LivingEntity le))
+            return;
+        processEntity(le);
+    }
+
+    @SubscribeEvent
+    public void onEntitySpawn(MobSpawnEvent.FinalizeSpawn e)
+    {
+        var world = e.getLevel();
+        var entity = e.getEntity();
+        if (world.isClientSide())
+            return;
+
+        processEntity(entity);
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
