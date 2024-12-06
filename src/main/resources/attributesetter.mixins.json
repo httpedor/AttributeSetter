@@ -4,7 +4,9 @@
   "package": "com.httpedor.attributesetter.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-    "LivingEntityMixin"
+    "LivingEntityMixin",
+    "MobMixin",
+    "ServerWorldMixin"
   ],
   "injectors": {
     "defaultRequire": 1
