@@ -4,9 +4,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import oshi.util.tuples.Pair;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 public class AttributeSetterAPI {
     static final Map<ResourceLocation, Map<Attribute, AttributeModifier>> ENTITY_MODIFIERS = new HashMap<>();
@@ -15,8 +17,8 @@ public class AttributeSetterAPI {
     static final Map<ResourceLocation, Map<Attribute, Double>> BASE_TAG_MODIFIERS = new HashMap<>();
     static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
     static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Pair<Double, UUID>>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Pair<Double, UUID>>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
 
     public static void registerEntityAttributeModifier(ResourceLocation entity, Attribute attr, AttributeModifier modifier) {
         if (!ENTITY_MODIFIERS.containsKey(entity))
@@ -60,7 +62,7 @@ public class AttributeSetterAPI {
         if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
             BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
 
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, baseValue);
+        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
     }
     public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, EquipmentSlot slot) {
         if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
@@ -68,6 +70,6 @@ public class AttributeSetterAPI {
         if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
             BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, baseValue);
+        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
     }
 }

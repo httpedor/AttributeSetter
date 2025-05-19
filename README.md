@@ -102,7 +102,7 @@ In the example above, all swords have +8 health, and all sticks will deal +5 dam
 Which item ID will be changed. If the first character is a # the key is treated as a tag. If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings"
 
 ### UUID
-This is how minecraft knows which item has which modifier. If you only have one modifier in the item you can ignore this, but if you have more than one, you should generate a UUID for each one. You can use [this site](https://www.uuidgenerator.net/) to generate one. BASE operation doesn't need a UUID.
+This is how minecraft knows which item has which modifier. ~~If you only have one modifier in the item you can ignore this, but if you have more than one, you should generate a UUID for each one. You can use [this site](https://www.uuidgenerator.net/) to generate one. BASE operation doesn't need a UUID~~. This is no longer necessary as of update 1.11
 
 ### Attribute
 Which attribute should be changed, supports modded attributes.

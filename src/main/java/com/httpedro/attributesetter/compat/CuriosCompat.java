@@ -13,6 +13,7 @@ import net.minecraftforge.common.capabilities.ForgeCapabilities;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
+import oshi.util.tuples.Pair;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 
@@ -82,7 +83,7 @@ public class CuriosCompat {
             if (json.has("uuid"))
                 mod = new AttributeModifier(UUID.fromString(json.get("uuid").getAsString()), "ASMod", value, op);
             else
-                mod = new AttributeModifier("ASMod", value, op);
+                mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
 
             if (isTag)
                 registerTagItemAttributeModifier(id, attr, mod, slot);
@@ -109,7 +110,8 @@ public class CuriosCompat {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), AttributeModifier.Operation.ADDITION));
+                    var val = modEntry.getValue();
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -120,7 +122,8 @@ public class CuriosCompat {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), AttributeModifier.Operation.ADDITION));
+                    var val = modEntry.getValue();
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -130,7 +133,9 @@ public class CuriosCompat {
             {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
-                    e.addModifier(modEntry.getKey(), modEntry.getValue());
+                    var val = modEntry.getValue();
+                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
+                    e.addModifier(modEntry.getKey(), clone);
                 }
             }
         }
@@ -143,7 +148,9 @@ public class CuriosCompat {
             {
                 for (var entry : slotMods.entrySet())
                 {
-                    e.addModifier(entry.getKey(), entry.getValue());
+                    var val = entry.getValue();
+                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
+                    e.addModifier(entry.getKey(), clone);
                 }
             }
         }

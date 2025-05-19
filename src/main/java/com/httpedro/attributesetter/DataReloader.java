@@ -82,7 +82,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 if (modObj.has("uuid"))
                                     mod = new AttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                                 else
-                                    mod = new AttributeModifier(DEFAULT_UUID, "ASMod", value, op);
+                                    mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
 
                                 if (isTag)
                                     AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
@@ -162,7 +162,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 if (modObj.has("uuid"))
                                     mod = new AttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                                 else
-                                    mod = new AttributeModifier(DEFAULT_UUID, "ASMod", value, op);
+                                    mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
 
                                 if (isTag)
                                     AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
