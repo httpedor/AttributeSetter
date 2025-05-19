@@ -124,7 +124,7 @@ public class Attributesetter {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), AttributeModifier.Operation.ADDITION));
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), AttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -135,7 +135,7 @@ public class Attributesetter {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), AttributeModifier.Operation.ADDITION));
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), AttributeModifier.Operation.ADDITION));
                 }
             }
         }
