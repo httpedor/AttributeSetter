@@ -38,8 +38,6 @@ import java.io.InputStreamReader;
 import java.util.*;
 
 public class AttributeSetter implements ModInitializer {
-    public static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
-    public static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
     public static final Identifier PACKET_ID = Identifier.of("attributesetter", "sync");
     private MinecraftServer server;
 
@@ -55,6 +53,11 @@ public class AttributeSetter implements ModInitializer {
             for (var modElement : mods)
             {
                 var modObj = modElement.getAsJsonObject();
+                //Can't mixin in interface default methods, so until Trinkets decides to implement that, can't do anything
+                /*if (FabricLoader.getInstance().isModLoaded("trinkets") && TrinketsCompat.shouldCurioHandle(entry.getKey(), modObj))
+                {
+                    continue;
+                }*/
                 String opStr;
                 String slotStr = null;
                 if (modObj.has("operation"))
@@ -157,7 +160,7 @@ public class AttributeSetter implements ModInitializer {
                     if (modObj.has("uuid"))
                         mod = new EntityAttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
                     else
-                        mod = new EntityAttributeModifier(DEFAULT_UUID, "ASMod", value, op);
+                        mod = new EntityAttributeModifier(UUID.randomUUID(), "ASMod", value, op);
 
                     if (isTag)
                         AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
@@ -249,7 +252,7 @@ public class AttributeSetter implements ModInitializer {
                     for (var modEntry : entry.getValue().get(slot).entrySet())
                     {
                         modsMap.get(modEntry.getKey()).clear();
-                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
             }
@@ -260,7 +263,7 @@ public class AttributeSetter implements ModInitializer {
                     for (var modEntry : entry.getValue().get(slot).entrySet())
                     {
                         modsMap.get(modEntry.getKey()).clear();
-                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(BASE_UUID, "ASMod", modEntry.getValue(), EntityAttributeModifier.Operation.ADDITION));
+                        modsMap.put(modEntry.getKey(), new EntityAttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), EntityAttributeModifier.Operation.ADDITION));
                     }
                 }
             }

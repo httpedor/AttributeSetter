@@ -27,9 +27,27 @@ repositories {
             includeGroup "maven.modrinth"
         }
     }
+    exclusiveContent {
+        forRepository {
+            maven {
+                url "https://cursemaven.com"
+            }
+        }
+        filter {
+            includeGroup "curse.maven"
+        }
+    }
     maven {
         name "Will BL Releases"
         url "https://maven.willbl.dev/releases"
+    }
+    maven {
+        name = "TerraformersMC"
+        url = "https://maven.terraformersmc.com/"
+    }
+    maven {
+        name = "Ladysnake Libs"
+        url = 'https://maven.ladysnake.org/releases'
     }
 }
 
@@ -42,10 +60,14 @@ dependencies {
     modRuntimeOnly "maven.modrinth:lithium:mc1.20.1-0.11.2"
     modRuntimeOnly "maven.modrinth:sodium:mc1.20.1-0.5.11"
     modRuntimeOnly "maven.modrinth:modmenu:7.2.2"
+    modRuntimeOnly "curse.maven:cloth-config-348521:5729104"
+    modRuntimeOnly "curse.maven:architectury-api-419699:5137936"
+    modRuntimeOnly "curse.maven:artifacts-312353:6351710"
 
     // Fabric API. This is technically optional, but you probably want it anyway.
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    compileOnly "maven.modrinth:trinkets:3.7.2"
+
+    modImplementation "dev.emi:trinkets:3.7.2"
 }
 
 processResources {

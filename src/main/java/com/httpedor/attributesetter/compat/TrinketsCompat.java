@@ -11,14 +11,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-import static com.httpedor.attributesetter.AttributeSetter.BASE_UUID;
-
 public class TrinketsCompat {
 
-    static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
-    static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
 
     public static boolean shouldCurioHandle(String idStr, JsonObject json)
     {
@@ -31,36 +29,18 @@ public class TrinketsCompat {
 
 
         String slot;
-        boolean isCuriosSlot;
         if (json.has("slot"))
         {
             slot = json.get("slot").getAsString();
-            isCuriosSlot = true;
+            if (!slot.startsWith("curio:"))
+                return false;
+            else
+                slot = slot.substring(slot.indexOf(':')+1);
         }
         else
         {
             return false;
-            /*
-            var itemEntry = ForgeRegistries.ITEMS.getValue(id);
-            if (itemEntry == null)
-            {
-                System.out.println("Invalid item: " + id);
-                return true;
-            }
-
-            var slots = CuriosApi.getCuriosHelper().getCurioTags(itemEntry);
-            if (slots.isEmpty())
-            {
-                return false;
-            }
-
-            isCuriosSlot = true;
-            slot = slots.iterator().next();
-             */
         }
-
-        if (!isCuriosSlot)
-            return false;
 
         //Now to actually registering it
         var value = json.get("value").getAsDouble();
@@ -91,7 +71,7 @@ public class TrinketsCompat {
             if (json.has("uuid"))
                 mod = new EntityAttributeModifier(UUID.fromString(json.get("uuid").getAsString()), "ASMod", value, op);
             else
-                mod = new EntityAttributeModifier("ASMod", value, op);
+                mod = new EntityAttributeModifier(UUID.randomUUID(), "ASMod", value, op);
 
             if (isTag)
                 registerTagItemAttributeModifier(id, attr, mod, slot);
