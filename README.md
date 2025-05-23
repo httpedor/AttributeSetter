@@ -4,7 +4,7 @@ AttributeSetter Is a simple lightweight mod that can change the default attribut
 
 
 # How To Use
-
+If you have any questions, you can visit the [Discord](https://discord.gg/fNp78qTqW7)
 ## Entities
 Inside your datapack namespace folder, create a `attributesetter\entity` folder, and inside it, you can put as many json files as you want, with this format:
 ```json5
