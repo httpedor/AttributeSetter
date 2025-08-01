@@ -1,13 +1,16 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "com.httpedor.attributesetter.mixin",
-  "compatibilityLevel": "JAVA_17",
+  "package": "com.httpedro.attributesetter.mixin",
+  "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "LivingEntityMixin",
-    "ServerWorldMixin"
+  ],
+  "client": [
   ],
   "injectors": {
     "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
   }
 }
