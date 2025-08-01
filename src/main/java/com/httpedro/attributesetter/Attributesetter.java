@@ -351,7 +351,7 @@ public class Attributesetter {
                 var attrName = entry.getKey();
                 var value = entry.getValue();
                 var line = Component.literal(" ").append(Component.translatable("attribute.modifier.equals.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(ChatFormatting.DARK_GREEN), Component.translatable(attrName).withStyle(ChatFormatting.DARK_GREEN)));
-                lines.add(mainhandSlotIndex + i + 1, line);
+                lines.add(Math.min(mainhandSlotIndex + i + 1, lines.size()), line);
                 i++;
             }
 
