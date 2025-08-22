@@ -8,6 +8,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
+import net.minecraft.util.parsing.packrat.Dictionary;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EquipmentSlotGroup;
@@ -26,6 +27,12 @@ import static com.httpedro.attributesetter.Attributesetter.DEFAULT_UUID;
 public class DataReloader extends SimpleJsonResourceReloadListener {
     static final Gson GSON = (new GsonBuilder()).setPrettyPrinting().disableHtmlEscaping().registerTypeAdapter(ResourceLocation.class, new ResourceLocation.Serializer()).create();
     public Map<ResourceLocation, JsonElement> entries = new HashMap<>();
+
+    public static Map<String, String> update = Map.of(
+            "ADDITION", "ADD_VALUE",
+            "MULTIPLY_TOTAL", "ADD_MULTIPLIED_TOTAL",
+            "MULTIPLY_BASE", "ADD_MULTIPLIED_BASE"
+    );
 
     public DataReloader() {
         super(GSON, "attributesetter");
@@ -82,12 +89,14 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             }
                             else
                             {
+                                if (update.containsKey(opStr.toUpperCase()))
+                                    opStr = update.get(opStr.toUpperCase());
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
                                 AttributeModifier mod;
                                 if (modObj.has("id"))
                                     mod = new AttributeModifier(ResourceLocation.parse(modObj.get("id").getAsString()), value, op);
                                 else
-                                    mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath("AttributeSetter", idStr + "_" + i), value, op);
+                                    mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath(Attributesetter.MODID, idStr.replace(':', '_') + "_" + i), value, op);
 
                                 if (isTag)
                                     AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
@@ -137,7 +146,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             {
                                 var itemEntry = BuiltInRegistries.ITEM.get(id);
                                 if (itemEntry instanceof ArmorItem ai)
-                                    EquipmentSlotGroup.bySlot(ai.getEquipmentSlot());
+                                    slot = EquipmentSlotGroup.bySlot(ai.getEquipmentSlot());
                                 else
                                     slot = EquipmentSlotGroup.MAINHAND;
                             }
@@ -168,12 +177,14 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             }
                             else
                             {
+                                if (update.containsKey(opStr.toUpperCase()))
+                                    opStr = update.get(opStr.toUpperCase());
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
                                 AttributeModifier mod;
                                 if (modObj.has("id"))
                                     mod = new AttributeModifier(ResourceLocation.parse(modObj.get("id").getAsString()), value, op);
                                 else
-                                    mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath("AttributeSetter", idStr + "_" + i), value, op);
+                                    mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath(Attributesetter.MODID, idStr.replace(':', '_') + "_" + i), value, op);
 
                                 if (isTag)
                                     AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);

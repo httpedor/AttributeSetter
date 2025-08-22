@@ -3,6 +3,7 @@ package com.httpedro.attributesetter.compat;
 import com.google.gson.JsonObject;
 import com.httpedro.attributesetter.AttributeSetterAPI;
 import com.httpedro.attributesetter.Attributesetter;
+import com.httpedro.attributesetter.DataReloader;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -78,12 +79,14 @@ public class CuriosCompat {
         }
         else
         {
+            if (DataReloader.update.containsKey(opStr.toUpperCase()))
+                opStr = DataReloader.update.get(opStr.toUpperCase());
             var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
             AttributeModifier mod;
             if (json.has("id"))
                 mod = new AttributeModifier(ResourceLocation.parse(json.get("id").getAsString()), value, op);
             else
-                mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath("AttributeSetter", "curios_" + idStr + "_" + i), value, op);
+                mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath(Attributesetter.MODID, "curios_" + idStr.replace(':', '_') + "_" + i), value, op);
 
             if (isTag)
                 registerTagItemAttributeModifier(id, attr, mod, slot);
