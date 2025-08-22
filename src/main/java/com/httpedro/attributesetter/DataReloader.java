@@ -150,10 +150,14 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             }
                             if (opStr.equalsIgnoreCase("base"))
                             {
+                                UUID uuid = null;
+                                if (modObj.has("uuid"))
+                                    uuid = UUID.fromString(modObj.get("uuid").getAsString());
+                                
                                 if (isTag)
-                                    AttributeSetterAPI.registerTagItemBaseAttribute(id, attr, value, slot);
+                                    AttributeSetterAPI.registerTagItemBaseAttribute(id, attr, value, slot, uuid);
                                 else
-                                    AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot);
+                                    AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot, uuid);
                             }
                             else
                             {
@@ -190,6 +194,11 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         AttributeSetterAPI.ITEM_MODIFIERS.clear();
         AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
         AttributeSetterAPI.BASE_ITEM_MODIFIERS.clear();
+        AttributeSetterAPI.BASE_TAG_ITEM_MODIFIERS.clear();
+        
+        if (ModList.get().isLoaded("curios")) {
+            CuriosCompat.clearMaps();
+        }
 
         Attributesetter.LOGGER.info("Reloading attributesetter, found {} files", resourceLocationJsonElementMap.size());
         for (Map.Entry<ResourceLocation, JsonElement> fileEntry : resourceLocationJsonElementMap.entrySet()) {

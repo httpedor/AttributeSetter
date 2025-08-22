@@ -6,6 +6,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import oshi.util.tuples.Pair;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -57,19 +58,34 @@ public class AttributeSetterAPI {
         TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
     }
     public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, EquipmentSlot slot) {
+        registerItemBaseAttribute(item, attr, baseValue, slot, null);
+    }
+    
+    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, EquipmentSlot slot, UUID uuid) {
         if (!BASE_ITEM_MODIFIERS.containsKey(item))
             BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
         if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
             BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
 
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
+        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID(item.toString(), attr.getDescriptionId(), slot.getName());
+        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
     }
     public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, EquipmentSlot slot) {
+        registerTagItemBaseAttribute(tag, attr, baseValue, slot, null);
+    }
+    
+    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, EquipmentSlot slot, UUID uuid) {
         if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
             BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
         if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
             BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
+        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID("#" + tag.toString(), attr.getDescriptionId(), slot.getName());
+        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
+    }
+    
+    private static UUID generateDeterministicUUID(String identifier, String attribute, String slot) {
+        String combined = "AttributeSetter:" + identifier + ":" + attribute + ":" + slot;
+        return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
     }
 }

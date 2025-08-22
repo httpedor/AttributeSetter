@@ -17,6 +17,7 @@ import oshi.util.tuples.Pair;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -27,8 +28,15 @@ public class CuriosCompat {
 
     static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
     static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Attribute, Pair<Double, UUID>>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Attribute, Pair<Double, UUID>>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    
+    public static void clearMaps() {
+        ITEM_MODIFIERS.clear();
+        TAG_ITEM_MODIFIERS.clear();
+        BASE_ITEM_MODIFIERS.clear();
+        BASE_TAG_ITEM_MODIFIERS.clear();
+    }
 
     public static boolean shouldCurioHandle(String idStr, JsonObject json)
     {
@@ -71,10 +79,14 @@ public class CuriosCompat {
             opStr = "ADDITION";
         if (opStr.equalsIgnoreCase("base"))
         {
+            UUID uuid = null;
+            if (json.has("uuid"))
+                uuid = UUID.fromString(json.get("uuid").getAsString());
+            
             if (isTag)
-                registerTagItemBaseAttribute(id, attr, value, slot);
+                registerTagItemBaseAttribute(id, attr, value, slot, uuid);
             else
-                registerItemBaseAttribute(id, attr, value, slot);
+                registerItemBaseAttribute(id, attr, value, slot, uuid);
         }
         else
         {
@@ -110,8 +122,8 @@ public class CuriosCompat {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    var val = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
+                    var pair = modEntry.getValue();
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(pair.getB(), "ASMod", pair.getA(), AttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -122,8 +134,8 @@ public class CuriosCompat {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     e.removeAttribute(modEntry.getKey());
-                    var val = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
+                    var pair = modEntry.getValue();
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(pair.getB(), "ASMod", pair.getA(), AttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -174,19 +186,34 @@ public class CuriosCompat {
         TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
     }
     public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, String slot) {
+        registerItemBaseAttribute(item, attr, baseValue, slot, null);
+    }
+    
+    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, String slot, UUID uuid) {
         if (!BASE_ITEM_MODIFIERS.containsKey(item))
             BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
         if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
             BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
 
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, baseValue);
+        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID(item.toString(), attr.getDescriptionId(), "curio:" + slot);
+        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
     }
     public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, String slot) {
+        registerTagItemBaseAttribute(tag, attr, baseValue, slot, null);
+    }
+    
+    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, String slot, UUID uuid) {
         if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
             BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
         if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
             BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, baseValue);
+        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID("#" + tag.toString(), attr.getDescriptionId(), "curio:" + slot);
+        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
+    }
+    
+    private static UUID generateDeterministicUUID(String identifier, String attribute, String slot) {
+        String combined = "AttributeSetter:" + identifier + ":" + attribute + ":" + slot;
+        return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
     }
 }
