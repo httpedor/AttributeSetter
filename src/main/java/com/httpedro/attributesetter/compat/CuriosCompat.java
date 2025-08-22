@@ -3,18 +3,16 @@ package com.httpedro.attributesetter.compat;
 import com.google.gson.JsonObject;
 import com.httpedro.attributesetter.AttributeSetterAPI;
 import com.httpedro.attributesetter.Attributesetter;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraftforge.common.capabilities.ForgeCapabilities;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.neoforged.bus.api.SubscribeEvent;
 import oshi.util.tuples.Pair;
-import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 
 import java.util.HashMap;
@@ -25,19 +23,20 @@ import static com.httpedro.attributesetter.Attributesetter.BASE_UUID;
 
 public class CuriosCompat {
 
-    static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Holder<Attribute>, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Holder<Attribute>, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Holder<Attribute>, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<String, Map<Holder<Attribute>, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    private static int i = 0;
 
     public static boolean shouldCurioHandle(String idStr, JsonObject json)
     {
         boolean isTag = idStr.startsWith("#");
         ResourceLocation id;
         if (isTag)
-            id = new ResourceLocation(idStr.substring(1));
+            id = ResourceLocation.parse(idStr.substring(1));
         else
-            id = new ResourceLocation(idStr);
+            id = ResourceLocation.parse(idStr);
 
 
         String slot;
@@ -57,12 +56,13 @@ public class CuriosCompat {
         //Now to actually registering it
         var value = json.get("value").getAsDouble();
 
-        var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(json.get("attribute").getAsString()));
-        if (attr == null)
+        var attrOpt = BuiltInRegistries.ATTRIBUTE.getHolder(ResourceLocation.parse(json.get("attribute").getAsString()));
+        if (attrOpt.isEmpty())
         {
-            System.out.println("Failed to find attribute " + json.get("attribute").getAsString());
+            Attributesetter.LOGGER.error("Failed to find attribute " + json.get("attribute").getAsString());
             return true;
         }
+        var attr = attrOpt.get();
 
         String opStr;
         if (json.has("operation"))
@@ -80,10 +80,10 @@ public class CuriosCompat {
         {
             var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
             AttributeModifier mod;
-            if (json.has("uuid"))
-                mod = new AttributeModifier(UUID.fromString(json.get("uuid").getAsString()), "ASMod", value, op);
+            if (json.has("id"))
+                mod = new AttributeModifier(ResourceLocation.parse(json.get("id").getAsString()), value, op);
             else
-                mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
+                mod = new AttributeModifier(ResourceLocation.fromNamespaceAndPath("AttributeSetter", "curios_" + idStr + "_" + i), value, op);
 
             if (isTag)
                 registerTagItemAttributeModifier(id, attr, mod, slot);
@@ -91,6 +91,7 @@ public class CuriosCompat {
                 registerItemAttributeModifier(id, attr, mod, slot);
         }
 
+        i++;
         return true;
     }
 
@@ -101,7 +102,7 @@ public class CuriosCompat {
         var slot = e.getSlotContext().identifier();
 
         var item = stack.getItem();
-        var id = ForgeRegistries.ITEMS.getKey(item);
+        var id = BuiltInRegistries.ITEM.getKey(item);
         for (var entry : BASE_TAG_ITEM_MODIFIERS.entrySet())
         {
             if (stack.is(TagKey.create(Registries.ITEM, entry.getKey()))
@@ -111,7 +112,7 @@ public class CuriosCompat {
                 {
                     e.removeAttribute(modEntry.getKey());
                     var val = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getId(), val, AttributeModifier.Operation.ADD_VALUE));
                 }
             }
         }
@@ -123,7 +124,7 @@ public class CuriosCompat {
                 {
                     e.removeAttribute(modEntry.getKey());
                     var val = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getUuid(), "ASMod", val, AttributeModifier.Operation.ADDITION));
+                    e.addModifier(modEntry.getKey(), new AttributeModifier(e.getId(), val, AttributeModifier.Operation.ADD_VALUE));
                 }
             }
         }
@@ -134,7 +135,7 @@ public class CuriosCompat {
                 for (var modEntry : entry.getValue().get(slot).entrySet())
                 {
                     var val = modEntry.getValue();
-                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
+                    var clone = new AttributeModifier(e.getId(), val.amount(), val.operation());
                     e.addModifier(modEntry.getKey(), clone);
                 }
             }
@@ -149,7 +150,7 @@ public class CuriosCompat {
                 for (var entry : slotMods.entrySet())
                 {
                     var val = entry.getValue();
-                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
+                    var clone = new AttributeModifier(e.getId(), val.amount(), val.operation());
                     e.addModifier(entry.getKey(), clone);
                 }
             }
@@ -157,7 +158,7 @@ public class CuriosCompat {
 
     }
 
-    public static void registerItemAttributeModifier(ResourceLocation item, Attribute attr, AttributeModifier modifier, String slot) {
+    public static void registerItemAttributeModifier(ResourceLocation item, Holder<Attribute> attr, AttributeModifier modifier, String slot) {
         if (!ITEM_MODIFIERS.containsKey(item))
             ITEM_MODIFIERS.put(item, new HashMap<>());
         if (!ITEM_MODIFIERS.get(item).containsKey(slot))
@@ -165,7 +166,7 @@ public class CuriosCompat {
 
         ITEM_MODIFIERS.get(item).get(slot).put(attr, modifier);
     }
-    public static void registerTagItemAttributeModifier(ResourceLocation tag, Attribute attr, AttributeModifier modifier, String slot) {
+    public static void registerTagItemAttributeModifier(ResourceLocation tag, Holder<Attribute> attr, AttributeModifier modifier, String slot) {
         if (!TAG_ITEM_MODIFIERS.containsKey(tag))
             TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
         if (!TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
@@ -173,7 +174,7 @@ public class CuriosCompat {
 
         TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
     }
-    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, String slot) {
+    public static void registerItemBaseAttribute(ResourceLocation item, Holder<Attribute> attr, double baseValue, String slot) {
         if (!BASE_ITEM_MODIFIERS.containsKey(item))
             BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
         if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
@@ -181,7 +182,7 @@ public class CuriosCompat {
 
         BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, baseValue);
     }
-    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, String slot) {
+    public static void registerTagItemBaseAttribute(ResourceLocation tag, Holder<Attribute> attr, double baseValue, String slot) {
         if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
             BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
         if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))

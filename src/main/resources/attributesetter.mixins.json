@@ -4,6 +4,7 @@
   "package": "com.httpedro.attributesetter.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "LivingEntityMixin"
   ],
   "client": [
   ],
