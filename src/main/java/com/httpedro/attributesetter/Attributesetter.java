@@ -9,6 +9,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -157,35 +158,41 @@ public class Attributesetter {
 
     private void processEntity(LivingEntity le)
     {
+        final var entityType = BuiltInRegistries.ENTITY_TYPE.getKey(le.getType());
+        final var id = ResourceLocation.fromNamespaceAndPath(entityType.getNamespace(), entityType.getPath());
+        Runnable processBase = () ->
+        {
+            for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
+            {
+                if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
+                {
+                    for (var modEntry : entry.getValue().entrySet())
+                    {
+                        var attrInstance = le.getAttribute(modEntry.getKey());
+                        if (attrInstance != null)
+                            attrInstance.setBaseValue(modEntry.getValue());
+                    }
+                }
+            }
+
+            var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
+            if (baseMods != null)
+            {
+                for (var entry : baseMods.entrySet())
+                {
+                    var attrInstance = le.getAttribute(entry.getKey());
+                    if (attrInstance != null)
+                        attrInstance.setBaseValue(entry.getValue());
+                }
+            }
+        };
+        if (le.getType() == EntityType.PLAYER)
+            processBase.run();
         if (((ASLivingEntity)le).as$isLoaded())
             return;
 
         ((ASLivingEntity)le).as$setLoaded();
-        var entityType = BuiltInRegistries.ENTITY_TYPE.getKey(le.getType());
-        var id = ResourceLocation.fromNamespaceAndPath(entityType.getNamespace(), entityType.getPath());
-        for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
-        {
-            if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
-            {
-                for (var modEntry : entry.getValue().entrySet())
-                {
-                    var attrInstance = le.getAttribute(modEntry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.setBaseValue(modEntry.getValue());
-                }
-            }
-        }
-
-        var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
-        if (baseMods != null)
-        {
-            for (var entry : baseMods.entrySet())
-            {
-                var attrInstance = le.getAttribute(entry.getKey());
-                if (attrInstance != null)
-                    attrInstance.setBaseValue(entry.getValue());
-            }
-        }
+        processBase.run();
 
         for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
         {
