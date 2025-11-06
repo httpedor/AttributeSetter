@@ -5,6 +5,7 @@ import com.google.gson.JsonParser;
 import com.httpedro.attributesetter.compat.CuriosCompat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -12,6 +13,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.*;
@@ -37,6 +39,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -47,6 +50,7 @@ import java.util.UUID;
 public class Attributesetter {
     public static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
     public static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
+    public static boolean isApothic = false;
 
     // Define mod id in a common place for everything to reference
     private static final DataReloader dr = new DataReloader();
@@ -71,6 +75,7 @@ public class Attributesetter {
 
     public void commonSetup(FMLCommonSetupEvent e)
     {
+        isApothic = ModList.get().isLoaded("attributeslib");
         e.enqueueWork(() -> {
             CHANNEL.registerMessage(0, HashMap.class,
                     (map, buf) -> {
@@ -167,35 +172,41 @@ public class Attributesetter {
 
     private void processEntity(LivingEntity le)
     {
+        final var entityType = ForgeRegistries.ENTITY_TYPES.getKey(le.getType());
+        final var id = ResourceLocation.tryBuild(entityType.getNamespace(), entityType.getPath());
+        Runnable processBase = () ->
+        {
+            for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
+            {
+                if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
+                {
+                    for (var modEntry : entry.getValue().entrySet())
+                    {
+                        var attrInstance = le.getAttribute(modEntry.getKey());
+                        if (attrInstance != null)
+                            attrInstance.setBaseValue(modEntry.getValue());
+                    }
+                }
+            }
+
+            var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
+            if (baseMods != null)
+            {
+                for (var entry : baseMods.entrySet())
+                {
+                    var attrInstance = le.getAttribute(entry.getKey());
+                    if (attrInstance != null)
+                        attrInstance.setBaseValue(entry.getValue());
+                }
+            }
+        };
+        if (le.getType() == EntityType.PLAYER)
+            processBase.run();
         if (((ASLivingEntity)le).as$isLoaded())
             return;
 
         ((ASLivingEntity)le).as$setLoaded();
-        var entityType = ForgeRegistries.ENTITY_TYPES.getKey(le.getType());
-        var id = new ResourceLocation(entityType.getNamespace(), entityType.getPath());
-        for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
-        {
-            if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
-            {
-                for (var modEntry : entry.getValue().entrySet())
-                {
-                    var attrInstance = le.getAttribute(modEntry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.setBaseValue(modEntry.getValue());
-                }
-            }
-        }
-
-        var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
-        if (baseMods != null)
-        {
-            for (var entry : baseMods.entrySet())
-            {
-                var attrInstance = le.getAttribute(entry.getKey());
-                if (attrInstance != null)
-                    attrInstance.setBaseValue(entry.getValue());
-            }
-        }
+        processBase.run();
 
         for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
         {
@@ -254,83 +265,32 @@ public class Attributesetter {
         @SubscribeEvent
         public static void tooltipEvent(ItemTooltipEvent e)
         {
-            var lines = e.getToolTip();
-            Map<String, Double> greenAttributes = new HashMap<>();
-            String currentSlot = null;
-            int mainhandSlotIndex = -1;
-            int i = 0;
-            for (Iterator<Component> it = lines.iterator(); it.hasNext();)
+            if (isApothic)
+                return;
+            var original = new ArrayList<>(e.getToolTip());
+            try
             {
-                var line = it.next();
-                var content = line.getContents();
-                //Normal attr modifiers
-                if (content instanceof TranslatableContents ttc)
+                var lines = e.getToolTip();
+                Map<String, Map<String, Double>> blueAttributes = new HashMap<>();
+                Map<String, Integer> slotIndexes = new HashMap<>();
+                Map<String, Double> greenAttributes = new HashMap<>();
+                String currentSlot = null;
+                int i = 0;
+                for (Iterator<Component> it = lines.iterator(); it.hasNext();)
                 {
-                    String dmgAttrName = "attribute.name.generic.attack_damage";
-                    String spdAttrName = "attribute.name.generic.attack_speed";
-                    if (ttc.getKey().startsWith("item.modifiers"))
+                    var line = it.next();
+                    var content = line.getContents();
+                    //Normal attr modifiers
+                    if (content instanceof TranslatableContents ttc)
                     {
-                        currentSlot = ttc.getKey().substring(ttc.getKey().lastIndexOf('.')+1);
-                        if (currentSlot.equals("mainhand"))
-                            mainhandSlotIndex = i;
-                    }
-                    else if (ttc.getKey().startsWith("attribute.modifier.plus.0") && currentSlot != null)
-                    {
-                        if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                        String dmgAttrName = "attribute.name.generic.attack_damage";
+                        String spdAttrName = "attribute.name.generic.attack_speed";
+                        if (ttc.getKey().startsWith("item.modifiers"))
                         {
-                            i++;
-                            continue;
+                            currentSlot = ttc.getKey().substring(ttc.getKey().lastIndexOf('.')+1);
+                            slotIndexes.put(currentSlot, i);
                         }
-                        var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
-                        double value = Double.parseDouble(ttc.getArgument(0).getString());
-                        if (greenAttributes.containsKey(attrName))
-                        {
-                            greenAttributes.put(attrName, greenAttributes.get(attrName) + value);
-                            it.remove();
-                        }
-                        else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
-                        {
-                            greenAttributes.put(attrName, value+1);
-                            it.remove();
-                        }
-                        else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
-                        {
-                            greenAttributes.put(attrName, 4 + value);
-                            it.remove();
-                        }
-                    }
-                    else if (ttc.getKey().startsWith("attribute.modifier.take.0") && currentSlot != null)
-                    {
-                        if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
-                        {
-                            i++;
-                            continue;
-                        }
-                        var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
-                        double value = Double.parseDouble(ttc.getArgument(0).getString());
-                        if (greenAttributes.containsKey(attrName))
-                        {
-                            greenAttributes.put(attrName, greenAttributes.get(attrName) - value);
-                            it.remove();
-                        }
-                        else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
-                        {
-                            greenAttributes.put(attrName, -value+1);
-                            it.remove();
-                        }
-                        else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
-                        {
-                            greenAttributes.put(attrName, 4 - value);
-                            it.remove();
-                        }
-                    }
-                }
-                //Green attr
-                else
-                {
-                    for (var part : line.getSiblings())
-                    {
-                        if (part.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
+                        else if (ttc.getKey().startsWith("attribute.modifier.plus.0") && currentSlot != null)
                         {
                             if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
                             {
@@ -338,21 +298,116 @@ public class Attributesetter {
                                 continue;
                             }
                             var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
-                            greenAttributes.put(attrName, Double.parseDouble(ttc.getArgument(0).getString()));
-                            it.remove();
+                            double value = Double.parseDouble(ttc.getArgument(0).getString());
+                            if (greenAttributes.containsKey(attrName))
+                            {
+                                greenAttributes.put(attrName, greenAttributes.get(attrName) + value);
+                                it.remove();
+                            }
+                            else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
+                            {
+                                greenAttributes.put(attrName, value+1);
+                                it.remove();
+                            }
+                            else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
+                            {
+                                greenAttributes.put(attrName, 4 + value);
+                                it.remove();
+                            }
+                            else 
+                            {
+                                if (!blueAttributes.containsKey(currentSlot))
+                                    blueAttributes.put(currentSlot, new HashMap<>());
+
+                                blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) + value);
+                                it.remove();
+                            }
+                        }
+                        else if (ttc.getKey().startsWith("attribute.modifier.take.0") && currentSlot != null)
+                        {
+                            if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                            {
+                                i++;
+                                continue;
+                            }
+                            var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
+                            double value = Double.parseDouble(ttc.getArgument(0).getString());
+                            if (greenAttributes.containsKey(attrName))
+                            {
+                                greenAttributes.put(attrName, greenAttributes.get(attrName) - value);
+                                it.remove();
+                            }
+                            else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
+                            {
+                                greenAttributes.put(attrName, -value+1);
+                                it.remove();
+                            }
+                            else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
+                            {
+                                greenAttributes.put(attrName, 4 - value);
+                                it.remove();
+                            }
+                            else
+                            {
+                                if (!blueAttributes.containsKey(currentSlot))
+                                    blueAttributes.put(currentSlot, new HashMap<>());
+                                blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) - value);
+                                it.remove();
+                            }
                         }
                     }
+                    else
+                    {
+                        for (var part : line.getSiblings())
+                        {
+                            if (part.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
+                            {
+                                if (!NumberUtils.isCreatable(ttc.getArgument(0).getString()))
+                                {
+                                    i++;
+                                    continue;
+                                }
+                                var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgument(1)).getContents()).getKey();
+                                greenAttributes.put(attrName, Double.parseDouble(ttc.getArgument(0).getString()));
+                                it.remove();
+                            }
+                        }
+                    }
+                    i++;
                 }
-                i++;
-            }
-            i = 0;
-            for (var entry : greenAttributes.entrySet())
+                for (var slotEntry : blueAttributes.entrySet())
+                {
+                    i = 0;
+                    var slot = slotEntry.getKey();
+                    for (var entry : slotEntry.getValue().entrySet())
+                    {
+                        var attrName = entry.getKey();
+                        var value = entry.getValue();
+                        if (value == 0)
+                        {
+                            i++;
+                            continue;
+                        }
+                        var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
+                        var line = Component.literal(" ").append(Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.minus.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color));
+                        lines.add(slotIndexes.get(slot) + i + 1, line);
+                        i++;
+                    }
+                }
+                i = 0;
+                for (var entry : greenAttributes.entrySet())
+                {
+                    var attrName = entry.getKey();
+                    var value = entry.getValue();
+                    var color = ChatFormatting.DARK_GREEN;
+                    var line = Component.literal(" ").append(Component.translatable("attribute.modifier.equals.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)));
+                    lines.add(slotIndexes.get("mainhand") + i + 1, line);
+                    i++;
+                }
+            } catch (Exception ex)
             {
-                var attrName = entry.getKey();
-                var value = entry.getValue();
-                var line = Component.literal(" ").append(Component.translatable("attribute.modifier.equals.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(ChatFormatting.DARK_GREEN), Component.translatable(attrName).withStyle(ChatFormatting.DARK_GREEN)));
-                lines.add(Math.min(mainhandSlotIndex + i + 1, lines.size()), line);
-                i++;
+                e.getToolTip().clear();
+                e.getToolTip().addAll(original);
             }
 
         }

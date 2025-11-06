@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "prepareRunClientCompile",
+      "type": "shell",
+      "command": ".\\gradlew prepareRunClientCompile",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "C:\\Windows\\System32\\cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      }
+    },
+    {
+      "label": "prepareRunDataCompile",
+      "type": "shell",
+      "command": ".\\gradlew prepareRunDataCompile",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "C:\\Windows\\System32\\cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      }
+    },
+    {
+      "label": "prepareRunGameTestServerCompile",
+      "type": "shell",
+      "command": ".\\gradlew prepareRunGameTestServerCompile",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "C:\\Windows\\System32\\cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      }
+    },
+    {
+      "label": "prepareRunServerCompile",
+      "type": "shell",
+      "command": ".\\gradlew prepareRunServerCompile",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "C:\\Windows\\System32\\cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      }
+    }
+  ]
+}
