@@ -34,6 +34,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
             return;
         var splitted = path.split("/");
         var mode = splitted[0];
+        var fName = splitted[splitted.length - 1];
         var obj = jsonElement.getAsJsonObject();
         try {
             switch (mode)
@@ -43,7 +44,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                     for (var entry : obj.entrySet())
                     {
                         var mods = entry.getValue().getAsJsonArray();
-                        var selector = ASSelector.parse(entry.getKey());
+                        var selector = ASSelector.parse(entry.getKey(), fName.replace(".json", ""));
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
@@ -98,7 +99,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
 
                             var value = modObj.get("value").getAsDouble();
 
-                            ASSelector selector = ASSelector.parse(entry.getKey());
+                            ASSelector selector = ASSelector.parse(entry.getKey(), fName.replace(".json", ""));
 
                             EquipmentSlot slot;
                             try {

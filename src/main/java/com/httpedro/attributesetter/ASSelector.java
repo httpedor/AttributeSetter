@@ -24,23 +24,24 @@ public class ASSelector {
         this.type = type;
         this.id = id;
     }
-    public ASSelector(SelectorType type, String idStr) {
-        this.type = type;
-        this.id = ResourceLocation.tryParse(idStr);
-    }
 
-    public static ASSelector parse(String str)
+    public static ASSelector parse(String str, String defaultNamespace)
     {
         if (str.startsWith("!"))
         {
-            var selector = parse(str.substring(1));
+            var selector = parse(str.substring(1), defaultNamespace);
             selector.inverted = true;
             return selector;
         }
 
         if (str.startsWith("#"))
         {
-            return new ASSelector(SelectorType.TAG, str.substring(1));
+            ResourceLocation id;
+            if (str.contains(":"))
+                id = new ResourceLocation(str.substring(1));
+            else
+                id = new ResourceLocation(defaultNamespace, str.substring(1));
+            return new ASSelector(SelectorType.TAG, id);
         }
         else
         {
@@ -54,12 +55,26 @@ public class ASSelector {
                 } catch (CommandSyntaxException e) {
                     throw new RuntimeException("Failed to parse NBT in ASSelector: " + str, e);
                 }
-                var selector = new ASSelector(SelectorType.NBT, idStr);
+                ResourceLocation id;
+                if (idStr.isEmpty())
+                    id = null;
+                else if (idStr.contains(":"))
+                    id = new ResourceLocation(idStr);
+                else
+                    id = new ResourceLocation(defaultNamespace, idStr);
+                var selector = new ASSelector(SelectorType.NBT, id);
                 selector.nbt = nbtTag;
                 return selector;
             }
             else
-                return new ASSelector(SelectorType.ID, str);
+            {
+                ResourceLocation id;
+                if (str.contains(":"))
+                    id = new ResourceLocation(str);
+                else
+                    id = new ResourceLocation(defaultNamespace, str);
+                return new ASSelector(SelectorType.ID, id);
+            }
         }
     }
 
@@ -99,8 +114,9 @@ public class ASSelector {
                 if (nbt == null) return false;
                 CompoundTag itemNbt = item.save(new CompoundTag());
                 if (itemNbt == null) return false;
-
                 ret = NbtUtils.compareNbt(nbt, itemNbt, true);
+                if (id != null)
+                    ret = ret && ForgeRegistries.ITEMS.getKey(item.getItem()).equals(id);
                 break;
             default:
                 return false;

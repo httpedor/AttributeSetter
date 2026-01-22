@@ -39,11 +39,34 @@ Inside your datapack namespace folder, create a `attributesetter\entity` folder,
 }
 ```
 This file should be at `data/example/attributesetter/entity/example.json`
-*IMPORTANT: REMOVE ALL THE COMMENTS (THE LINES THAT STARTS WITH //) BEFORE USING THE JSON IN YOUR DATAPACK, THEY ARE JUST FOR EXPLANATION PURPOSES AND WILL CRASH YOUR DATAPACK*
+**IMPORTANT**: REMOVE ALL THE COMMENTS (THE LINES THAT STARTS WITH //) BEFORE USING THE JSON IN YOUR DATAPACK, THEY ARE JUST FOR EXPLANATION PURPOSES AND WILL CRASH YOUR DATAPACK*
 
 In the example above, all creepers will have 5 health, and +10 follow range. All entities tagged as raiders will have +8 health. The mob "example:anymob" will have 10 projectile damage.
 ### Object Key
 Which entity ID will be changed. If the first character is a # the key is treated as a tag. In the example above, all entities tagged as raiders will have +8 health, and all creepers will have 5 health. If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing entity "void_worm", instead of typing "alexsmobs:voidworm", I can just type "voidworm"
+**NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all turtles with an egg like this:
+```json5
+{
+  "{HasEgg:true}": [
+    {
+      "attribute": "minecraft:generic.max_health",
+      "value": 10,
+      "operation": "ADDITION",
+      "slot": "mainhand"
+    }
+  ],
+  "minecraft:zombie{IsBaby:1b}": [
+    {
+      "attribute": "minecraft:generic.movement_speed",
+      "value": 0.2,
+      "operation": "MULTIPLY_TOTAL"
+    }
+  ]
+}
+```
+
+This would increase the max health of all turtles with an egg by 10 and increase the movement speed of baby zombies by 20%.
+Keep in mind that NBT selectors are only checked when the entity is first loaded, so if you add or remove the NBT data after that, the attributes won't update.
 
 ### Attribute
 Which attribute should be changed, supports modded attributes.
@@ -100,7 +123,31 @@ This file should be at `data/example/attributesetter/item/example.json`
 
 In the example above, all swords have +8 health, and all sticks will deal +5 damage if in the main hand, and 2x health if in the offhand.
 ### Object Key
-Which item ID will be changed. If the first character is a # the key is treated as a tag. If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings"
+Which item ID will be changed.
+If the first character is a # the key is treated as a tag.
+If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings".
+**NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all sharpness 5 swords like this:
+```json5
+{
+  "{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}": [
+    {
+      "attribute": "minecraft:generic.attack_damage",
+      "value": 10,
+      "operation": "ADDITION",
+      "slot": "mainhand"
+    }
+  ],
+  "minecraft:golden_sword{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}": [
+    {
+      "attribute": "minecraft:generic.attack_damage",
+      "value": 10,
+      "operation": "ADDITION",
+      "slot": "mainhand"
+    }
+  ]
+}
+```
+This would increase the attack damage of all sharpness 5 swords by 10, and increase the attack damage of golden swords with sharpness 5 by another 10.
 
 ### UUID
 This is how minecraft knows which item has which modifier. ~~If you only have one modifier in the item you can ignore this, but if you have more than one, you should generate a UUID for each one. You can use [this site](https://www.uuidgenerator.net/) to generate one. BASE operation doesn't need a UUID~~. This is no longer necessary as of update 1.11
@@ -109,7 +156,10 @@ This is how minecraft knows which item has which modifier. ~~If you only have on
 Which attribute should be changed, supports modded attributes.
 
 ### Operation
-Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL` and `BASE`. They are all in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations) except `BASE`, that removes all other modifiers for that attribute and sets the value to the one in the json file.
+Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL`, `BASE` and `DURABILITY`. The first three are in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations). 
+`BASE` removes all other modifiers for that attribute and sets the value to the one in the json file.
+**NEW** `DURABILITY` is a special operation that only works with items that can break. It overrides the item's durability to the value in the json file.
+Default is ADDITION
 
 ### Slot
-Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand, if the item's class extends ArmorItem, the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot. You still have to specify the Curios slot.
+Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand, if the item's class extends ArmorItem(all armor items in the game do), the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot. You still have to specify the Curios slot.
