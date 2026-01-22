@@ -5,24 +5,19 @@ import com.google.gson.JsonParser;
 import com.httpedro.attributesetter.compat.CuriosCompat;
 import com.mojang.logging.LogUtils;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.*;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.ItemAttributeModifierEvent;
 import net.minecraftforge.event.OnDatapackSyncEvent;
-import net.minecraftforge.event.entity.EntityAttributeModificationEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
@@ -35,7 +30,6 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 
@@ -73,6 +67,7 @@ public class Attributesetter {
             MinecraftForge.EVENT_BUS.register(new CuriosCompat());
     }
 
+    @SuppressWarnings("unchecked")
     public void commonSetup(FMLCommonSetupEvent e)
     {
         isApothic = ModList.get().isLoaded("attributeslib");
@@ -119,119 +114,35 @@ public class Attributesetter {
         var stack = e.getItemStack();
         var slot = e.getSlotType();
 
-        var item = stack.getItem();
-        var id = ForgeRegistries.ITEMS.getKey(item);
-        for (var entry : AttributeSetterAPI.BASE_TAG_ITEM_MODIFIERS.entrySet())
+        for (var entry : AttributeSetterAPI.getEntriesFor(stack, slot))
         {
-            if (stack.is(TagKey.create(Registries.ITEM, entry.getKey()))
-                    && entry.getValue().containsKey(slot))
-            {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), AttributeModifier.Operation.ADDITION));
-                }
-            }
-        }
-        for (var entry : AttributeSetterAPI.BASE_ITEM_MODIFIERS.entrySet())
-        {
-            if (entry.getKey().equals(id) && entry.getValue().containsKey(slot))
-            {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    e.removeAttribute(modEntry.getKey());
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(modEntry.getValue().getB(), "ASMod", modEntry.getValue().getA(), AttributeModifier.Operation.ADDITION));
-                }
-            }
-        }
-        for (var entry : AttributeSetterAPI.TAG_ITEM_MODIFIERS.entrySet())
-        {
-            if (stack.is(TagKey.create(Registries.ITEM, entry.getKey())) && entry.getValue().containsKey(slot))
-            {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    e.addModifier(modEntry.getKey(), modEntry.getValue());
-                }
-            }
-        }
-
-        var modifiers = AttributeSetterAPI.ITEM_MODIFIERS.getOrDefault(id, null);
-        if (modifiers != null)
-        {
-            var slotMods = modifiers.getOrDefault(slot, null);
-            if (slotMods != null)
-            {
-                for (var entry : slotMods.entrySet())
-                {
-                    e.addModifier(entry.getKey(), entry.getValue());
-                }
-            }
+            entry.applyToItem(e);
         }
 
     }
 
     private void processEntity(LivingEntity le)
     {
-        final var entityType = ForgeRegistries.ENTITY_TYPES.getKey(le.getType());
-        final var id = ResourceLocation.tryBuild(entityType.getNamespace(), entityType.getPath());
-        Runnable processBase = () ->
-        {
-            for (var entry : AttributeSetterAPI.BASE_TAG_MODIFIERS.entrySet())
-            {
-                if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
-                {
-                    for (var modEntry : entry.getValue().entrySet())
-                    {
-                        var attrInstance = le.getAttribute(modEntry.getKey());
-                        if (attrInstance != null)
-                            attrInstance.setBaseValue(modEntry.getValue());
-                    }
-                }
-            }
-
-            var baseMods = AttributeSetterAPI.BASE_MODIFIERS.getOrDefault(id, null);
-            if (baseMods != null)
-            {
-                for (var entry : baseMods.entrySet())
-                {
-                    var attrInstance = le.getAttribute(entry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.setBaseValue(entry.getValue());
-                }
-            }
-        };
+        final var entries = AttributeSetterAPI.getEntriesFor(le);
         if (le.getType() == EntityType.PLAYER)
-            processBase.run();
+        {
+            for (var entry : entries)
+            {
+                if (entry.type == EntryType.BASE)
+                {
+                    entry.applyToEntity(le);
+                }
+            }
+        }
         if (((ASLivingEntity)le).as$isLoaded())
             return;
 
         ((ASLivingEntity)le).as$setLoaded();
-        processBase.run();
 
-        for (var entry : AttributeSetterAPI.TAG_MODIFIERS.entrySet())
+        for (var entry : entries)
         {
-            if (le.getType().is(TagKey.create(Registries.ENTITY_TYPE, entry.getKey())))
-            {
-                for (var modEntry : entry.getValue().entrySet())
-                {
-                    var attrInstance = le.getAttribute(modEntry.getKey());
-                    if (attrInstance != null)
-                        attrInstance.addPermanentModifier(modEntry.getValue());
-                }
-            }
+            entry.applyToEntity(le);
         }
-
-        var modifiers = AttributeSetterAPI.ENTITY_MODIFIERS.getOrDefault(id, null);
-        if (modifiers != null)
-        {
-            for (var entry : modifiers.entrySet())
-            {
-                var attrInstance = le.getAttribute(entry.getKey());
-                if (attrInstance != null)
-                    attrInstance.addPermanentModifier(entry.getValue());
-            }
-        }
-
         le.setHealth(le.getMaxHealth());
     }
 

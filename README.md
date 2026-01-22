@@ -39,6 +39,7 @@ Inside your datapack namespace folder, create a `attributesetter\entity` folder,
 }
 ```
 This file should be at `data/example/attributesetter/entity/example.json`
+*IMPORTANT: REMOVE ALL THE COMMENTS (THE LINES THAT STARTS WITH //) BEFORE USING THE JSON IN YOUR DATAPACK, THEY ARE JUST FOR EXPLANATION PURPOSES AND WILL CRASH YOUR DATAPACK*
 
 In the example above, all creepers will have 5 health, and +10 follow range. All entities tagged as raiders will have +8 health. The mob "example:anymob" will have 10 projectile damage.
 ### Object Key

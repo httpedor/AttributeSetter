@@ -17,9 +17,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
-
-import static com.httpedro.attributesetter.Attributesetter.DEFAULT_UUID;
 
 public class DataReloader extends SimpleJsonResourceReloadListener {
     private static final Gson GSON = (new GsonBuilder()).setPrettyPrinting().disableHtmlEscaping().registerTypeAdapter(ResourceLocation.class, new ResourceLocation.Serializer()).create();
@@ -37,7 +34,6 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
             return;
         var splitted = path.split("/");
         var mode = splitted[0];
-        var fName = splitted[1];
         var obj = jsonElement.getAsJsonObject();
         try {
             switch (mode)
@@ -47,7 +43,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                     for (var entry : obj.entrySet())
                     {
                         var mods = entry.getValue().getAsJsonArray();
-                        boolean isTag = entry.getKey().startsWith("#");
+                        var selector = ASSelector.parse(entry.getKey());
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
@@ -57,10 +53,6 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             else
                                 opStr = modObj.get("operation").getAsString();
                             var isBase = opStr.equalsIgnoreCase("base");
-                            var idStr = entry.getKey();
-                            if (isTag)
-                                idStr = idStr.substring(1);
-                            var id = idStr.contains(":") ? new ResourceLocation(idStr) : new ResourceLocation(fName, idStr);
                             var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
                             var value = modObj.get("value").getAsDouble();
                             if (attr == null)
@@ -68,27 +60,15 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
                                 continue;
                             }
+                            ASEntry asentry;
                             if (isBase)
-                            {
-                                if (isTag)
-                                    AttributeSetterAPI.registerTagBaseAttribute(id, attr, modObj.get("value").getAsDouble());
-                                else
-                                    AttributeSetterAPI.registerEntityBaseAttribute(id, attr, modObj.get("value").getAsDouble());
-                            }
+                                asentry = ASEntry.forEntity(res, EntryType.BASE, selector.id, attr, null, value);
                             else
                             {
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                AttributeModifier mod;
-                                if (modObj.has("uuid"))
-                                    mod = new AttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
-                                else
-                                    mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
-
-                                if (isTag)
-                                    AttributeSetterAPI.registerTagAttributeModifier(id, attr, mod);
-                                else
-                                    AttributeSetterAPI.registerEntityAttributeModifier(id, attr, mod);
+                                asentry = ASEntry.forEntity(res, EntryType.MODIFIER, selector.id, attr, op, value);
                             }
+                            AttributeSetterAPI.registerEntityEntry(res, selector, asentry);
                         }
                     }
 
@@ -99,7 +79,6 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                     for (var entry : obj.entrySet())
                     {
                         var mods = entry.getValue().getAsJsonArray();
-                        boolean isTag = entry.getKey().startsWith("#");
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
@@ -117,16 +96,15 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             if (modObj.has("slot"))
                                 slotStr = modObj.get("slot").getAsString();
 
-                            var idStr = entry.getKey();
-                            if (isTag)
-                                idStr = idStr.substring(1);
-                            var id = idStr.contains(":") ? new ResourceLocation(idStr) : new ResourceLocation(fName, idStr);
                             var value = modObj.get("value").getAsDouble();
+
+                            ASSelector selector = ASSelector.parse(entry.getKey());
+
                             EquipmentSlot slot;
                             try {
                                 if (slotStr == null)
                                 {
-                                    var itemEntry = ForgeRegistries.ITEMS.getValue(id);
+                                    var itemEntry = ForgeRegistries.ITEMS.getValue(selector.id);
                                     if (itemEntry instanceof ArmorItem ai)
                                         slot = ai.getEquipmentSlot();
                                     else
@@ -148,31 +126,23 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
                                 continue;
                             }
+                            //TODO: Handle UUIDs again
+                            ASEntry asentry;
                             if (opStr.equalsIgnoreCase("base"))
                             {
-                                UUID uuid = null;
-                                if (modObj.has("uuid"))
-                                    uuid = UUID.fromString(modObj.get("uuid").getAsString());
-                                
-                                if (isTag)
-                                    AttributeSetterAPI.registerTagItemBaseAttribute(id, attr, value, slot, uuid);
-                                else
-                                    AttributeSetterAPI.registerItemBaseAttribute(id, attr, value, slot, uuid);
+                                asentry = ASEntry.forItem(res, EntryType.BASE, selector.id, attr, slot, null, value);
+                            }
+                            else if (opStr.equalsIgnoreCase("durability"))
+                            {
+                                asentry = ASEntry.forItem(res, EntryType.DURABILITY, selector.id, attr, slot, null, value);
                             }
                             else
                             {
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                AttributeModifier mod;
-                                if (modObj.has("uuid"))
-                                    mod = new AttributeModifier(UUID.fromString(modObj.get("uuid").getAsString()), "ASMod", value, op);
-                                else
-                                    mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
-
-                                if (isTag)
-                                    AttributeSetterAPI.registerTagItemAttributeModifier(id, attr, mod, slot);
-                                else
-                                    AttributeSetterAPI.registerItemAttributeModifier(id, attr, mod, slot);
+                                asentry = ASEntry.forItem(res, EntryType.MODIFIER, selector.id, attr, slot, op, value);
                             }
+
+                            AttributeSetterAPI.registerItemEntry(res, selector, asentry);
                         }
                     }
 
@@ -187,14 +157,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> resourceLocationJsonElementMap, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profilerFiller) {
         entries.clear();
-        AttributeSetterAPI.ENTITY_MODIFIERS.clear();
-        AttributeSetterAPI.BASE_MODIFIERS.clear();
-        AttributeSetterAPI.TAG_MODIFIERS.clear();
-        AttributeSetterAPI.BASE_TAG_MODIFIERS.clear();
-        AttributeSetterAPI.ITEM_MODIFIERS.clear();
-        AttributeSetterAPI.TAG_ITEM_MODIFIERS.clear();
-        AttributeSetterAPI.BASE_ITEM_MODIFIERS.clear();
-        AttributeSetterAPI.BASE_TAG_ITEM_MODIFIERS.clear();
+        AttributeSetterAPI.clearAll();
         
         if (ModList.get().isLoaded("curios")) {
             CuriosCompat.clearMaps();

@@ -1,91 +1,149 @@
 package com.httpedro.attributesetter;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.ai.attributes.Attribute;
-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.registries.ForgeRegistries;
 import oshi.util.tuples.Pair;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class AttributeSetterAPI {
-    static final Map<ResourceLocation, Map<Attribute, AttributeModifier>> ENTITY_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<Attribute, Double>> BASE_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<Attribute, AttributeModifier>> TAG_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<Attribute, Double>> BASE_TAG_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Pair<Double, UUID>>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<EquipmentSlot, Map<Attribute, Pair<Double, UUID>>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    static final Map<ResourceLocation, Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>>> ENTITY_ENTRIES = new HashMap<>();
+    static final Map<ResourceLocation, Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>>> ITEM_ENTRIES = new HashMap<>();
 
-    public static void registerEntityAttributeModifier(ResourceLocation entity, Attribute attr, AttributeModifier modifier) {
-        if (!ENTITY_MODIFIERS.containsKey(entity))
-            ENTITY_MODIFIERS.put(entity, new HashMap<>());
-        ENTITY_MODIFIERS.get(entity).put(attr, modifier);
+    public static void registerItemEntry(ResourceLocation id, ASSelector selector, ASEntry entry)
+    {
+        var entries = ITEM_ENTRIES.computeIfAbsent(id, k -> new HashMap<>()).computeIfAbsent(selector.type, k -> new LinkedList<>());
+        if (entries.isEmpty())
+        {
+            entries.add(new Pair<>(selector, entry));
+            return;
+        }
+        // Insert based on priority: BASE > MODIFIER > DURABILITY
+        int insertIndex = 0;
+        for (var pair : entries)
+        {
+            var existingEntry = pair.getB();
+            if (entry.type == EntryType.BASE && existingEntry.type != EntryType.BASE)
+            {
+                break;
+            }
+            else if (entry.type == EntryType.MODIFIER && existingEntry.type == EntryType.DURABILITY)
+            {
+                break;
+            }
+            insertIndex++;
+        }
+        entries.add(insertIndex, new Pair<>(selector, entry));
     }
-    public static void registerEntityBaseAttribute(ResourceLocation entity, Attribute attr, double baseValue) {
-        if (!BASE_MODIFIERS.containsKey(entity))
-            BASE_MODIFIERS.put(entity, new HashMap<>());
-        BASE_MODIFIERS.get(entity).put(attr, baseValue);
-    }
-    public static void registerTagAttributeModifier(ResourceLocation tag, Attribute attr, AttributeModifier modifier) {
-        if (!TAG_MODIFIERS.containsKey(tag))
-            TAG_MODIFIERS.put(tag, new HashMap<>());
-        TAG_MODIFIERS.get(tag).put(attr, modifier);
-    }
-    public static void registerTagBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue) {
-        if (!BASE_TAG_MODIFIERS.containsKey(tag))
-            BASE_TAG_MODIFIERS.put(tag, new HashMap<>());
-        BASE_TAG_MODIFIERS.get(tag).put(attr, baseValue);
-    }
-    public static void registerItemAttributeModifier(ResourceLocation item, Attribute attr, AttributeModifier modifier, EquipmentSlot slot) {
-        if (!ITEM_MODIFIERS.containsKey(item))
-            ITEM_MODIFIERS.put(item, new HashMap<>());
-        if (!ITEM_MODIFIERS.get(item).containsKey(slot))
-            ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
+    public static void registerEntityEntry(ResourceLocation id, ASSelector selector, ASEntry entry)
+    {
+        ENTITY_ENTRIES.computeIfAbsent(id, k -> new HashMap<>()).computeIfAbsent(selector.type, k -> new LinkedList<>());
+        var entries = ENTITY_ENTRIES.get(id).get(selector.type);
+        if (entries.isEmpty())
+        {
+            entries.add(new Pair<>(selector, entry));
+            return;
+        }
 
-        ITEM_MODIFIERS.get(item).get(slot).put(attr, modifier);
+        if (entry.type == EntryType.BASE)
+            entries.addFirst(new Pair<>(selector, entry));
+        else
+            entries.addLast(new Pair<>(selector, entry));
     }
-    public static void registerTagItemAttributeModifier(ResourceLocation tag, Attribute attr, AttributeModifier modifier, EquipmentSlot slot) {
-        if (!TAG_ITEM_MODIFIERS.containsKey(tag))
-            TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
-        if (!TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
-            TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
-        TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
+    public static Collection<Pair<ASSelector, ASEntry>> getItemEntries(ResourceLocation id)
+    {
+        if (!ITEM_ENTRIES.containsKey(id)) return new ArrayList<>();
+        return ITEM_ENTRIES.get(id).values().stream().flatMap(List::stream).collect(Collectors.toList());
     }
-    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, EquipmentSlot slot) {
-        registerItemBaseAttribute(item, attr, baseValue, slot, null);
+    public static Collection<Pair<ASSelector, ASEntry>> getItemEntries(ResourceLocation id, SelectorType type)
+    {
+        if (!ITEM_ENTRIES.containsKey(id)) return new ArrayList<>();
+        var map = ITEM_ENTRIES.get(id);
+        if (!map.containsKey(type)) return new ArrayList<>();
+        return map.get(type);
+    }
+    public static Collection<Pair<ASSelector, ASEntry>> getEntityEntries(ResourceLocation id)
+    {
+        if (!ENTITY_ENTRIES.containsKey(id)) return new ArrayList<>();
+        return ENTITY_ENTRIES.get(id).values().stream().flatMap(List::stream).collect(Collectors.toList());
+    }
+    public static Collection<Pair<ASSelector, ASEntry>> getEntityEntries(ResourceLocation id, SelectorType type)
+    {
+        if (!ENTITY_ENTRIES.containsKey(id)) return new ArrayList<>();
+        var map = ENTITY_ENTRIES.get(id);
+        if (!map.containsKey(type)) return new ArrayList<>();
+        return map.get(type);
+    }
+
+    public static Collection<ASEntry> getEntriesFor(ItemStack stack, EquipmentSlot slot)
+    {
+        List<ASEntry> results = new ArrayList<>();
+
+        var item = stack.getItem();
+        var id = ForgeRegistries.ITEMS.getKey(item);
+        var selectorOrder = List.of(SelectorType.TAG, SelectorType.NBT, SelectorType.ID);
+
+        for (var type : selectorOrder)
+        {
+            for (var entry : AttributeSetterAPI.getItemEntries(id, type))
+            {
+                var selector = entry.getA();
+                var ase = entry.getB();
+                if (selector.test(stack) && ase.slot == slot)
+                {
+                    results.add(ase);
+                }
+            }
+        }
+
+        return results;
+    }
+
+    public static Collection<ASEntry> getEntriesFor(LivingEntity entity)
+    {
+        List<ASEntry> results = new ArrayList<>();
+
+        var entityType = entity.getType();
+        var id = EntityType.getKey(entityType);
+        var selectorOrder = List.of(SelectorType.TAG, SelectorType.NBT, SelectorType.ID);
+
+        for (var type : selectorOrder)
+        {
+            for (var entry : AttributeSetterAPI.getEntityEntries(id, type))
+            {
+                var selector = entry.getA();
+                var ase = entry.getB();
+                if (selector.test(entity))
+                {
+                    results.add(ase);
+                }
+            }
+        }
+
+        return results;
     }
     
-    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, EquipmentSlot slot, UUID uuid) {
-        if (!BASE_ITEM_MODIFIERS.containsKey(item))
-            BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
-        if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
-            BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
-
-        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID(item.toString(), attr.getDescriptionId(), slot.getName());
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
-    }
-    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, EquipmentSlot slot) {
-        registerTagItemBaseAttribute(tag, attr, baseValue, slot, null);
+    public static void clearAll()
+    {
+        ENTITY_ENTRIES.clear();
+        ITEM_ENTRIES.clear();
     }
     
-    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, EquipmentSlot slot, UUID uuid) {
-        if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
-            BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
-        if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
-            BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
-
-        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID("#" + tag.toString(), attr.getDescriptionId(), slot.getName());
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
-    }
-    
-    private static UUID generateDeterministicUUID(String identifier, String attribute, String slot) {
-        String combined = "AttributeSetter:" + identifier + ":" + attribute + ":" + slot;
+    public static UUID generateDeterministicUUID(String modSource, String identifier, String attribute, String slot) {
+        String combined = modSource + ":" + identifier + ":" + attribute + ":" + slot + ":";
         return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
     }
 }
