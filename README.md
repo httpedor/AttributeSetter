@@ -44,6 +44,7 @@ This file should be at `data/example/attributesetter/entity/example.json`
 In the example above, all creepers will have 5 health, and +10 follow range. All entities tagged as raiders will have +8 health. The mob "example:anymob" will have 10 projectile damage.
 ### Object Key
 Which entity ID will be changed. If the first character is a # the key is treated as a tag. In the example above, all entities tagged as raiders will have +8 health, and all creepers will have 5 health. If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing entity "void_worm", instead of typing "alexsmobs:voidworm", I can just type "voidworm"
+**NEW**: You can now use `!` at the start of the key to negate it. For example: `!minecraft:zombie` would apply the attribute to all entities except zombies.
 **NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all turtles with an egg like this:
 ```json5
 {
@@ -126,6 +127,7 @@ In the example above, all swords have +8 health, and all sticks will deal +5 dam
 Which item ID will be changed.
 If the first character is a # the key is treated as a tag.
 If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings".
+**NEW**: You can now use `!` at the start of the key to negate it. For example: `!minecraft:diamond_sword` would apply the attribute to all items except diamond swords.
 **NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all sharpness 5 swords like this:
 ```json5
 {

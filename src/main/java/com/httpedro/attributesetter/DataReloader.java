@@ -9,6 +9,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraftforge.fml.ModList;
@@ -41,10 +42,13 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
             {
                 case "entity":
                 {
+                    int i = 0;
                     for (var entry : obj.entrySet())
                     {
                         var mods = entry.getValue().getAsJsonArray();
                         var selector = ASSelector.parse(entry.getKey(), fName.replace(".json", ""));
+                        var entryPath = fName + "/" + entry.getKey() + "/" + i;
+                        i++;
                         for (var modElement : mods)
                         {
                             var modObj = modElement.getAsJsonObject();
@@ -63,13 +67,13 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                             }
                             ASEntry asentry;
                             if (isBase)
-                                asentry = ASEntry.forEntity(res, EntryType.BASE, selector.id, attr, null, value);
+                                asentry = ASEntry.forEntity(res, EntryType.BASE, entryPath, attr, null, value);
                             else
                             {
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                asentry = ASEntry.forEntity(res, EntryType.MODIFIER, selector.id, attr, op, value);
+                                asentry = ASEntry.forEntity(res, EntryType.MODIFIER, entryPath, attr, op, value);
                             }
-                            AttributeSetterAPI.registerEntityEntry(res, selector, asentry);
+                            AttributeSetterAPI.registerEntityEntry(selector, asentry);
                         }
                     }
 
@@ -80,8 +84,10 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                     for (var entry : obj.entrySet())
                     {
                         var mods = entry.getValue().getAsJsonArray();
+                        int i = 0;
                         for (var modElement : mods)
                         {
+                            var entryPath = fName + "/" + entry.getKey() + "/" + i;
                             var modObj = modElement.getAsJsonObject();
                             if (ModList.get().isLoaded("curios") && CuriosCompat.shouldCurioHandle(entry.getKey(), modObj))
                             {
@@ -92,6 +98,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                                 opStr = modObj.get("operation").getAsString();
                             else
                                 opStr = "ADDITION";
+                            var isDur = opStr.equalsIgnoreCase("durability");
 
                             String slotStr = null;
                             if (modObj.has("slot"))
@@ -101,49 +108,54 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
 
                             ASSelector selector = ASSelector.parse(entry.getKey(), fName.replace(".json", ""));
 
-                            EquipmentSlot slot;
-                            try {
-                                if (slotStr == null)
-                                {
-                                    var itemEntry = ForgeRegistries.ITEMS.getValue(selector.id);
-                                    if (itemEntry instanceof ArmorItem ai)
-                                        slot = ai.getEquipmentSlot();
-                                    else
-                                        slot = EquipmentSlot.MAINHAND;
-                                }
-                                else
-                                {
-                                    slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
-                                }
-                            } catch (IllegalArgumentException e)
+                            EquipmentSlot slot = EquipmentSlot.MAINHAND;
+                            if (!isDur)
                             {
-                                Attributesetter.LOGGER.error("Invalid slot: {}", slotStr);
-                                continue;
+                                try {
+                                    if (slotStr == null)
+                                    {
+                                        var itemEntry = ForgeRegistries.ITEMS.getValue(selector.id);
+                                        if (itemEntry instanceof ArmorItem ai)
+                                            slot = ai.getEquipmentSlot();
+                                    }
+                                    else
+                                    {
+                                        slot = EquipmentSlot.valueOf(slotStr.toUpperCase());
+                                    }
+                                } catch (IllegalArgumentException e)
+                                {
+                                    Attributesetter.LOGGER.error("Invalid slot: {}", slotStr);
+                                    continue;
+                                }
                             }
 
-                            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
-                            if (attr == null)
+                            Attribute attr = null;
+                            if (!isDur)
                             {
-                                Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
-                                continue;
+                                attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(modObj.get("attribute").getAsString()));
+                                if (attr == null)
+                                {
+                                    Attributesetter.LOGGER.error("Failed to find attribute {}", modObj.get("attribute").getAsString());
+                                    continue;
+                                }
                             }
                             //TODO: Handle UUIDs again
                             ASEntry asentry;
                             if (opStr.equalsIgnoreCase("base"))
                             {
-                                asentry = ASEntry.forItem(res, EntryType.BASE, selector.id, attr, slot, null, value);
+                                asentry = ASEntry.forItem(res.getNamespace(), EntryType.BASE, entryPath, attr, slot, null, value);
                             }
                             else if (opStr.equalsIgnoreCase("durability"))
                             {
-                                asentry = ASEntry.forItem(res, EntryType.DURABILITY, selector.id, attr, slot, null, value);
+                                asentry = ASEntry.forItem(res.getNamespace(), EntryType.DURABILITY, entryPath, attr, slot, null, value);
                             }
                             else
                             {
                                 var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
-                                asentry = ASEntry.forItem(res, EntryType.MODIFIER, selector.id, attr, slot, op, value);
+                                asentry = ASEntry.forItem(res.getNamespace(), EntryType.MODIFIER, entryPath, attr, slot, op, value);
                             }
 
-                            AttributeSetterAPI.registerItemEntry(res, selector, asentry);
+                            AttributeSetterAPI.registerItemEntry(selector, asentry);
                         }
                     }
 

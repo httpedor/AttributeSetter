@@ -16,15 +16,26 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class AttributeSetterAPI {
-    static final Map<ResourceLocation, Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>>> ENTITY_ENTRIES = new HashMap<>();
-    static final Map<ResourceLocation, Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>>> ITEM_ENTRIES = new HashMap<>();
+    private static final Map<ResourceLocation, ASSelector> selectorTypes = new HashMap<>();
+    private static final Map<ResourceLocation, ASEntry> entryTypes = new HashMap<>();
+    static final Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>> ENTITY_ENTRIES = new HashMap<>();
+    // We cache ID selectors separately for performance, because they are exact matches and it'd be useless to iterate over all other selectors
+    static final Map<ResourceLocation, LinkedList<Pair<ASSelector, ASEntry>>> ENTITY_ID_CACHE = new HashMap<>();
+    static final Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>> ITEM_ENTRIES = new HashMap<>();
+    // Same as above
+    static final Map<ResourceLocation, LinkedList<Pair<ASSelector, ASEntry>>> ITEM_ID_CACHE = new HashMap<>();
 
-    public static void registerItemEntry(ResourceLocation id, ASSelector selector, ASEntry entry)
+    public static void registerItemEntry(ASSelector selector, ASEntry entry)
     {
-        var entries = ITEM_ENTRIES.computeIfAbsent(id, k -> new HashMap<>()).computeIfAbsent(selector.type, k -> new LinkedList<>());
+        if (selector.type == SelectorType.ID)
+        {
+            ITEM_ID_CACHE.computeIfAbsent(selector.id, k -> new LinkedList<>());
+            ITEM_ID_CACHE.get(selector.id).add(new Pair<>(selector, entry));
+            return;
+        }
+        var entries = ITEM_ENTRIES.computeIfAbsent(selector.type, k -> new LinkedList<>());
         if (entries.isEmpty())
         {
             entries.add(new Pair<>(selector, entry));
@@ -47,10 +58,16 @@ public class AttributeSetterAPI {
         }
         entries.add(insertIndex, new Pair<>(selector, entry));
     }
-    public static void registerEntityEntry(ResourceLocation id, ASSelector selector, ASEntry entry)
+    public static void registerEntityEntry(ASSelector selector, ASEntry entry)
     {
-        ENTITY_ENTRIES.computeIfAbsent(id, k -> new HashMap<>()).computeIfAbsent(selector.type, k -> new LinkedList<>());
-        var entries = ENTITY_ENTRIES.get(id).get(selector.type);
+        ENTITY_ENTRIES.computeIfAbsent(selector.type, k -> new LinkedList<>());
+        if (selector.type == SelectorType.ID)
+        {
+            ENTITY_ID_CACHE.computeIfAbsent(selector.id, k -> new LinkedList<>());
+            ENTITY_ID_CACHE.get(selector.id).add(new Pair<>(selector, entry));
+            return;
+        }
+        var entries = ENTITY_ENTRIES.get(selector.type);
         if (entries.isEmpty())
         {
             entries.add(new Pair<>(selector, entry));
@@ -63,29 +80,50 @@ public class AttributeSetterAPI {
             entries.addLast(new Pair<>(selector, entry));
     }
 
-    public static Collection<Pair<ASSelector, ASEntry>> getItemEntries(ResourceLocation id)
+    public static Collection<Pair<ASSelector, ASEntry>> possibleItemEntries(ResourceLocation id)
     {
-        if (!ITEM_ENTRIES.containsKey(id)) return new ArrayList<>();
-        return ITEM_ENTRIES.get(id).values().stream().flatMap(List::stream).collect(Collectors.toList());
+        var ret = new ArrayList<Pair<ASSelector, ASEntry>>();
+        if (ITEM_ID_CACHE.containsKey(id))
+            ret.addAll(ITEM_ID_CACHE.get(id));
+        for (var entryList : ITEM_ENTRIES.values())
+        {
+            ret.addAll(entryList);
+        }
+        return ret;
     }
-    public static Collection<Pair<ASSelector, ASEntry>> getItemEntries(ResourceLocation id, SelectorType type)
+    public static Collection<Pair<ASSelector, ASEntry>> possibleItemEntries(ResourceLocation id, SelectorType type)
     {
-        if (!ITEM_ENTRIES.containsKey(id)) return new ArrayList<>();
-        var map = ITEM_ENTRIES.get(id);
-        if (!map.containsKey(type)) return new ArrayList<>();
-        return map.get(type);
+        if (type == SelectorType.ID)
+        {
+            if (ITEM_ID_CACHE.containsKey(id))
+                return ITEM_ID_CACHE.get(id);
+            return new ArrayList<>();
+        }
+        if (!ITEM_ENTRIES.containsKey(type)) return new ArrayList<>();
+        return ITEM_ENTRIES.get(type);
     }
-    public static Collection<Pair<ASSelector, ASEntry>> getEntityEntries(ResourceLocation id)
+    public static Collection<Pair<ASSelector, ASEntry>> possibleEntityEntries(ResourceLocation id)
     {
-        if (!ENTITY_ENTRIES.containsKey(id)) return new ArrayList<>();
-        return ENTITY_ENTRIES.get(id).values().stream().flatMap(List::stream).collect(Collectors.toList());
+        var ret = new ArrayList<Pair<ASSelector, ASEntry>>();
+        if (ENTITY_ID_CACHE.containsKey(id))
+            ret.addAll(ENTITY_ID_CACHE.get(id));
+        for (var entryList : ENTITY_ENTRIES.values())
+        {
+            ret.addAll(entryList);
+        }
+        return ret;
     }
-    public static Collection<Pair<ASSelector, ASEntry>> getEntityEntries(ResourceLocation id, SelectorType type)
+    public static Collection<Pair<ASSelector, ASEntry>> possibleEntityEntries(ResourceLocation id, SelectorType type)
     {
-        if (!ENTITY_ENTRIES.containsKey(id)) return new ArrayList<>();
-        var map = ENTITY_ENTRIES.get(id);
-        if (!map.containsKey(type)) return new ArrayList<>();
-        return map.get(type);
+        if (type == SelectorType.ID)
+        {
+            if (ENTITY_ID_CACHE.containsKey(id))
+                return ENTITY_ID_CACHE.get(id);
+            else
+                return new ArrayList<>();
+        }
+        if (!ENTITY_ENTRIES.containsKey(type)) return new ArrayList<>();
+        return ENTITY_ENTRIES.get(type);
     }
 
     public static Collection<ASEntry> getEntriesFor(ItemStack stack, EquipmentSlot slot)
@@ -93,12 +131,11 @@ public class AttributeSetterAPI {
         List<ASEntry> results = new ArrayList<>();
 
         var item = stack.getItem();
-        var id = ForgeRegistries.ITEMS.getKey(item);
         var selectorOrder = List.of(SelectorType.TAG, SelectorType.NBT, SelectorType.ID);
 
         for (var type : selectorOrder)
         {
-            for (var entry : AttributeSetterAPI.getItemEntries(id, type))
+            for (var entry : AttributeSetterAPI.possibleItemEntries(ForgeRegistries.ITEMS.getKey(item), type))
             {
                 var selector = entry.getA();
                 var ase = entry.getB();
@@ -122,7 +159,7 @@ public class AttributeSetterAPI {
 
         for (var type : selectorOrder)
         {
-            for (var entry : AttributeSetterAPI.getEntityEntries(id, type))
+            for (var entry : AttributeSetterAPI.possibleEntityEntries(id, type))
             {
                 var selector = entry.getA();
                 var ase = entry.getB();
@@ -136,10 +173,21 @@ public class AttributeSetterAPI {
         return results;
     }
     
+    public static void registerSelector(ResourceLocation id, ASSelector selector)
+    {
+        selectorTypes.put(id, selector);
+    }
+    public static void registerEntry(ResourceLocation id, ASEntry entry)
+    {
+        entryTypes.put(id, entry);
+    }
+    
     public static void clearAll()
     {
         ENTITY_ENTRIES.clear();
+        ENTITY_ID_CACHE.clear();
         ITEM_ENTRIES.clear();
+        ITEM_ID_CACHE.clear();
     }
     
     public static UUID generateDeterministicUUID(String modSource, String identifier, String attribute, String slot) {

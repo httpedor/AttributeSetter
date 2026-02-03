@@ -83,6 +83,7 @@ public class Attributesetter {
                         return entries;
                     },
                     (map, contextSupplier) -> {
+                        AttributeSetterAPI.clearAll();
                         for (Object obj : map.entrySet())
                         {
                             var entry = (Map.Entry<ResourceLocation, JsonElement>) obj;

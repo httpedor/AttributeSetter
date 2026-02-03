@@ -93,6 +93,8 @@ public class ASSelector {
                 var nbtTag = obj.saveWithoutId(new CompoundTag());
                 if (nbt == null) return false;
                 ret = NbtUtils.compareNbt(nbt, nbtTag, true);
+                if (id != null)
+                    ret = ret && EntityType.getKey(obj.getType()).equals(id);
                 break;
             default:
                 return false;
