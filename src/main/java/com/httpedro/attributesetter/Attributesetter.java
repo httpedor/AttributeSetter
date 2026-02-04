@@ -3,7 +3,22 @@ package com.httpedro.attributesetter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.httpedro.attributesetter.compat.CuriosCompat;
+import com.httpedro.attributesetter.selectors.ASSelector;
+import com.httpedro.attributesetter.selectors.CompositeASSelector;
+import com.httpedro.attributesetter.selectors.entity.IdEntitySelector;
+import com.httpedro.attributesetter.selectors.entity.NbtEntitySelector;
+import com.httpedro.attributesetter.selectors.entity.TagEntitySelector;
+import com.httpedro.attributesetter.selectors.item.IdItemSelector;
+import com.httpedro.attributesetter.selectors.item.NbtItemSelector;
+import com.httpedro.attributesetter.selectors.item.TagItemSelector;
+import com.httpedro.attributesetter.setters.entity.EntityAttributeModifierSetter;
+import com.httpedro.attributesetter.setters.entity.EntityAttributeSetter;
+import com.httpedro.attributesetter.setters.item.ItemAttributeBaseSetter;
+import com.httpedro.attributesetter.setters.item.ItemAttributeModifierSetter;
+import com.httpedro.attributesetter.setters.item.ItemAttributeSetter;
+import com.httpedro.attributesetter.setters.item.ItemDurabilitySetter;
 import com.mojang.logging.LogUtils;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -11,7 +26,9 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.*;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
@@ -21,6 +38,7 @@ import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
@@ -30,6 +48,8 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
+import net.minecraftforge.registries.ForgeRegistries;
+
 import org.apache.commons.lang3.math.NumberUtils;
 import org.slf4j.Logger;
 
@@ -64,12 +84,18 @@ public class Attributesetter {
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(this);
         if (ModList.get().isLoaded("curios"))
-            MinecraftForge.EVENT_BUS.register(new CuriosCompat());
+        {
+            var compat = new CuriosCompat();
+            compat.bootstrap();
+            MinecraftForge.EVENT_BUS.register(compat);
+        }
     }
 
     @SuppressWarnings("unchecked")
     public void commonSetup(FMLCommonSetupEvent e)
     {
+        setupSelectors();
+        setupSetters();
         isApothic = ModList.get().isLoaded("attributeslib");
         e.enqueueWork(() -> {
             CHANNEL.registerMessage(0, HashMap.class,
@@ -94,7 +120,7 @@ public class Attributesetter {
         });
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void datapackReload(AddReloadListenerEvent e)
     {
         e.addListener(dr);
@@ -113,11 +139,15 @@ public class Attributesetter {
     public void onItemAttribute(ItemAttributeModifierEvent e)
     {
         var stack = e.getItemStack();
-        var slot = e.getSlotType();
 
-        for (var entry : AttributeSetterAPI.getEntriesFor(stack, slot))
+        for (var entry : AttributeSetterAPI.getEntriesFor(stack))
         {
-            entry.applyToItem(e);
+            if (entry instanceof ItemAttributeSetter ias)
+            {
+                ias.apply(e);
+            }
+            else if (entry.shouldApply(stack))
+                entry.apply(stack);
         }
 
     }
@@ -129,9 +159,9 @@ public class Attributesetter {
         {
             for (var entry : entries)
             {
-                if (entry.type == EntryType.BASE)
+                if (entry instanceof EntityAttributeSetter eas)
                 {
-                    entry.applyToEntity(le);
+                    eas.apply(le);
                 }
             }
         }
@@ -142,7 +172,7 @@ public class Attributesetter {
 
         for (var entry : entries)
         {
-            entry.applyToEntity(le);
+            entry.apply(le);
         }
         le.setHealth(le.getMaxHealth());
     }
@@ -168,6 +198,338 @@ public class Attributesetter {
             return;
 
         processEntity(entity);
+    }
+
+    //TODO: Selectors that get re-checkd on certain events (like NBT changes)
+    private void setupSelectors()
+    {
+        // ID selectors
+        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
+            String namespace = fileName;
+            if (str.contains(":"))
+            {
+                var parts = str.split(":");
+                namespace = parts[0];
+                str = parts[1];
+            }
+            var res = new ResourceLocation(namespace, str);
+            return new IdEntitySelector(res);
+        });
+        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
+            String namespace = fileName;
+            if (str.contains(":"))
+            {
+                var parts = str.split(":");
+                namespace = parts[0];
+                str = parts[1];
+            }
+            var res = new ResourceLocation(namespace, str);
+            return new IdItemSelector(res);
+        });
+
+        // Composite selectors
+        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
+            CompositeASSelector.Mode mode;
+            String delimiter;
+            if (str.contains("||"))
+            {
+                mode = CompositeASSelector.Mode.OR;
+                delimiter = "\\|\\|";
+            }
+            else if (str.contains("&&"))
+            {
+                mode = CompositeASSelector.Mode.AND;
+                delimiter = "&&";
+            }
+            else
+                return null;
+
+            var parts = str.split(delimiter);
+            var selectors = new ArrayList<ASSelector<LivingEntity>>();
+            for (var part : parts)
+            {
+                var sel = AttributeSetterAPI.parseEntitySelector(part.trim(), fileName);
+                if (sel != null)
+                    selectors.add(sel);
+            }
+            if (selectors.size() > 0)
+                return new CompositeASSelector<LivingEntity>(selectors, mode);
+
+            return null;
+        });
+        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
+            CompositeASSelector.Mode mode;
+            String delimiter;
+            if (str.contains("||"))
+            {
+                mode = CompositeASSelector.Mode.OR;
+                delimiter = "\\|\\|";
+            }
+            else if (str.contains("&&"))
+            {
+                mode = CompositeASSelector.Mode.AND;
+                delimiter = "&&";
+            }
+            else
+                return null;
+
+            var parts = str.split(delimiter);
+            var selectors = new ArrayList<ASSelector<ItemStack>>();
+            for (var part : parts)
+            {
+                var sel = AttributeSetterAPI.parseItemSelector(part.trim(), fileName);
+                if (sel != null)
+                    selectors.add(sel);
+            }
+            if (selectors.size() > 0)
+                return new CompositeASSelector<ItemStack>(selectors, mode);
+
+            return null;
+        });
+
+        // Tag selectors
+        AttributeSetterAPI.registerEntitySelectorBuilder(50, (str, fileName) -> {
+            if (str.startsWith("#"))
+            {
+                var tag = str.substring(1);
+                var tagRes = new ResourceLocation(tag);
+                return new TagEntitySelector(tagRes);
+            }
+            return null;
+        });
+        AttributeSetterAPI.registerItemSelectorBuilder(50, (str, fileName) -> {
+            if (str.startsWith("#"))
+            {
+                var tag = str.substring(1);
+                var tagRes = new ResourceLocation(tag);
+                return new TagItemSelector(tagRes);
+            }
+            return null;
+        });
+
+        // Nbt selectors
+        AttributeSetterAPI.registerEntitySelectorBuilder(100, (str, fileName) -> {
+            var nbtStartIndex = str.indexOf('{');
+            var nbtEndIndex = str.lastIndexOf('}');
+            if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
+            {
+                String beforePart = str.substring(0, nbtStartIndex).trim();
+                String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
+                ASSelector<LivingEntity> beforeSelector;
+                if (beforePart.isEmpty())
+                    beforeSelector = null;
+                else
+                    beforeSelector = AttributeSetterAPI.parseEntitySelector(beforePart, fileName);
+                if (beforeSelector == null && !beforePart.isEmpty())
+                    return null;
+                try {
+                    if (beforeSelector != null)
+                    {
+                        return new CompositeASSelector<>(new ASSelector[] {
+                                beforeSelector,
+                                new NbtEntitySelector(nbtPart)
+                        }, CompositeASSelector.Mode.AND);
+                    }
+                    else
+                        return new NbtEntitySelector(nbtPart);
+                } catch (Exception ex)
+                {
+                    Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
+                    return null;
+                }
+            }
+            return null;
+        });
+        AttributeSetterAPI.registerItemSelectorBuilder(100, (str, fileName) -> {
+            var nbtStartIndex = str.indexOf('{');
+            var nbtEndIndex = str.lastIndexOf('}');
+            if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
+            {
+                String beforePart = str.substring(0, nbtStartIndex).trim();
+                String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
+                ASSelector<ItemStack> beforeSelector;
+                if (beforePart.isEmpty())
+                    beforeSelector = null;
+                else
+                    beforeSelector = AttributeSetterAPI.parseItemSelector(beforePart, fileName);
+                if (beforeSelector == null && !beforePart.isEmpty())
+                    return null;
+                try {
+                    if (beforeSelector != null)
+                    {
+                        return new CompositeASSelector<>(new ASSelector[] {
+                                beforeSelector,
+                                new NbtItemSelector(nbtPart)
+                        }, CompositeASSelector.Mode.AND);
+                    }
+                    else
+                        return new NbtItemSelector(nbtPart);
+                } catch (Exception ex)
+                {
+                    Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
+                    return null;
+                }
+            }
+            return null;
+        });
+    }
+    private void setupSetters()
+    {
+        // Simple attribute setters
+        AttributeSetterAPI.registerEntitySetterBuilder(0, (obj, id, selector) -> {
+            var attrElement = obj.get("attribute");
+            var valueElement = obj.get("value");
+            var opElement = obj.get("operation");
+            if (attrElement != null && valueElement != null)
+            {
+                var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrElement.getAsString()));
+                var value = valueElement.getAsDouble();
+                if (attr == null)
+                {
+                    Attributesetter.LOGGER.error("Failed to find attribute {}", attrElement.getAsString());
+                    return null;
+                }
+                if (opElement == null || opElement.getAsString().equalsIgnoreCase("base"))
+                    return new EntityAttributeSetter(attr, value);
+                else
+                {
+                    try
+                    {
+                        var op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
+                        return new EntityAttributeModifierSetter(attr, op, value, id);
+                    } catch (Exception ex)
+                    {
+                        Attributesetter.LOGGER.error("Failed to parse operation {}", opElement.getAsString());
+                        return null;
+                    }
+                }
+            }
+            return null;
+        });
+
+        // Item setters: split by operation
+        // - priority 1: durability/base (checked first)
+        // - priority 0: modifier (default)
+
+        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("durability"))
+                return null;
+            var valueElement = obj.get("value");
+            if (valueElement == null)
+                return null;
+            return new ItemDurabilitySetter(valueElement.getAsInt());
+        });
+
+        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("base"))
+                return null;
+
+            var attrElement = obj.get("attribute");
+            var valueElement = obj.get("value");
+            if (attrElement == null || valueElement == null)
+                return null;
+
+            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrElement.getAsString()));
+            var value = valueElement.getAsDouble();
+            if (attr == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find attribute {} in entry {}", attrElement.getAsString(), id);
+                return null;
+            }
+
+            var slot = parseItemSlot(obj.get("slot"), id, selector);
+            if (slot == null)
+                return null;
+
+            return new ItemAttributeBaseSetter(attr, value, slot, id);
+        });
+
+        AttributeSetterAPI.registerItemSetterBuilder(0, (obj, id, selector) -> {
+            var attrElement = obj.get("attribute");
+            var valueElement = obj.get("value");
+            var opElement = obj.get("operation");
+
+            if (attrElement == null || valueElement == null)
+                return null;
+
+            // base/durability are handled by higher-priority builders
+            if (opElement != null)
+            {
+                var opStr = opElement.getAsString();
+                if (opStr.equalsIgnoreCase("base") || opStr.equalsIgnoreCase("durability"))
+                    return null;
+            }
+
+            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrElement.getAsString()));
+            var value = valueElement.getAsDouble();
+            if (attr == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find attribute {} in entry {}", attrElement.getAsString(), id);
+                return null;
+            }
+
+            var slot = parseItemSlot(obj.get("slot"), id, selector);
+            if (slot == null)
+                return null;
+
+            if (opElement == null)
+                return new ItemAttributeModifierSetter(attr, AttributeModifier.Operation.ADDITION, value, slot, id);
+
+            AttributeModifier.Operation op;
+            try
+            {
+                op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
+            } catch (Exception ex)
+            {
+                Attributesetter.LOGGER.error("Failed to parse operation {} in entry {}", opElement.getAsString(), id);
+                return null;
+            }
+            return new ItemAttributeModifierSetter(attr, op, value, slot, id);
+        });
+
+    }
+
+    private EquipmentSlot parseItemSlot(JsonElement slotElement, String id, ASSelector<ItemStack> selector)
+    {
+        if (slotElement == null)
+        {
+            IdItemSelector idSelector;
+            if (selector instanceof IdItemSelector iis)
+                idSelector = iis;
+            else if (selector instanceof CompositeASSelector<ItemStack> cas)
+            {
+                IdItemSelector found = null;
+                for (var selObj : cas.selectors)
+                {
+                    if (selObj instanceof IdItemSelector iis2)
+                    {
+                        found = iis2;
+                        break;
+                    }
+                }
+                idSelector = found;
+            }
+            else
+                idSelector = null;
+
+            if (idSelector != null)
+            {
+                var itemEntry = ForgeRegistries.ITEMS.getValue(idSelector.id);
+                if (itemEntry instanceof ArmorItem ai)
+                    return ai.getEquipmentSlot();
+            }
+            return EquipmentSlot.MAINHAND;
+        }
+
+        try {
+            return EquipmentSlot.valueOf(slotElement.getAsString().toUpperCase());
+        } catch (IllegalArgumentException e)
+        {
+            Attributesetter.LOGGER.error("Invalid slot: {} in entry {}", slotElement.getAsString(), id);
+            return null;
+        }
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent

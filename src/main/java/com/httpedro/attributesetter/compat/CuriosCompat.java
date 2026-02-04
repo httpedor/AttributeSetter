@@ -1,219 +1,135 @@
 package com.httpedro.attributesetter.compat;
 
-import com.google.gson.JsonObject;
 import com.httpedro.attributesetter.AttributeSetterAPI;
 import com.httpedro.attributesetter.Attributesetter;
-import net.minecraft.core.registries.Registries;
+import com.httpedro.attributesetter.selectors.CompositeASSelector;
+import com.httpedro.attributesetter.selectors.item.IdItemSelector;
+import com.httpedro.attributesetter.setters.ASSetter;
+import com.httpedro.attributesetter.setters.CompositeASSetter;
+
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraftforge.common.capabilities.ForgeCapabilities;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
-import oshi.util.tuples.Pair;
-import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
-
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-
-import static com.httpedro.attributesetter.Attributesetter.BASE_UUID;
 
 public class CuriosCompat {
 
-    static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, AttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Pair<Double, UUID>>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    static final Map<ResourceLocation, Map<String, Map<Attribute, Pair<Double, UUID>>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
-    
-    public static void clearMaps() {
-        ITEM_MODIFIERS.clear();
-        TAG_ITEM_MODIFIERS.clear();
-        BASE_ITEM_MODIFIERS.clear();
-        BASE_TAG_ITEM_MODIFIERS.clear();
-    }
-
-    public static boolean shouldCurioHandle(String idStr, JsonObject json)
+    public void bootstrap()
     {
-        boolean isTag = idStr.startsWith("#");
-        ResourceLocation id;
-        if (isTag)
-            id = new ResourceLocation(idStr.substring(1));
-        else
-            id = new ResourceLocation(idStr);
+        AttributeSetterAPI.registerItemSetterBuilder(5, (obj, id, selector) -> {
+            var opEl = obj.get("operation");
+            var slotEl = obj.get("slot");
+            String[] slots;
+            if (slotEl == null)
+            {
+                return null;
+                // This is not working because of load order. The Curios mod loads the data packs after Attributesetter, so I can't get the item slots here.
+                /*ResourceLocation itemId = null;
+                if (selector instanceof IdItemSelector idSelector)
+                    itemId = idSelector.id;
+                else if (selector instanceof CompositeASSelector compositeSelector)
+                {
+                    for (int i = 0; i < compositeSelector.selectors.length; i++)
+                    {
+                        var subSelector = compositeSelector.selectors[i];
+                        if (subSelector instanceof IdItemSelector idSelector)
+                        {
+                            itemId = idSelector.id;
+                            Attributesetter.LOGGER.warn("Curio item setter {} is missing a slot, assuming curios:body for item {}", id, itemId);
+                            break;
+                        }
+                    }   
+                }
 
-
-        String slot;
-        if (json.has("slot"))
-        {
-            slot = json.get("slot").getAsString();
-            if (!slot.startsWith("curio:"))
-                return false;
+                if (itemId == null)
+                    return null;
+                var item = ForgeRegistries.ITEMS.getValue(itemId);
+                if (item == null)
+                    return null;
+                var itemstack = new ItemStack(item);
+                var cSlots = CuriosApi.getItemStackSlots(itemstack, FMLLoader.getDist().isClient());
+                if (cSlots.isEmpty())
+                    return null;
+                slots = new String[cSlots.size()];
+                int i = 0;
+                for (var entry : cSlots.entrySet())
+                {
+                    slots[i] = entry.getValue().getIdentifier();
+                    i++;
+                }*/
+            }
+            else if (!slotEl.getAsString().startsWith("curio:"))
+                return null;
             else
-                slot = slot.substring(slot.indexOf(':')+1);
-        }
-        else
-        {
-            return false;
-        }
+                slots = new String[] { slotEl.getAsString().substring("curio:".length()) };
 
-        //Now to actually registering it
-        var value = json.get("value").getAsDouble();
+            var attrEl = obj.get("attribute");
+            if (attrEl == null)
+            {
+                Attributesetter.LOGGER.warn("Curio item setter {} is missing an attribute", id);
+                return null;
+            }
+            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrEl.getAsString()));
+            if (attr == null)
+            {
+                Attributesetter.LOGGER.warn("Curio item setter {} has an invalid attribute {}", id, attrEl.getAsString());
+                return null;
+            }
+            var valueEl = obj.get("value");
+            if (valueEl == null)
+            {
+                Attributesetter.LOGGER.warn("Curio item setter {} is missing an amount", id);
+                return null;
+            }
+            double value = valueEl.getAsDouble();
+            var uniqueIndex = id.toString();
+            ASSetter<ItemStack>[] setters = new ASSetter[slots.length];
+            int i = 0;
+            for (var slot : slots)
+            {
+                if (opEl != null)
+                {
+                    var opStr = opEl.getAsString().toUpperCase();
+                    if (opStr.equalsIgnoreCase("base"))
+                    {
+                        setters[i] = new CurioItemBaseSetter(attr, value, slot, uniqueIndex);
+                        continue;
+                    }
 
-        var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(json.get("attribute").getAsString()));
-        if (attr == null)
-        {
-            System.out.println("Failed to find attribute " + json.get("attribute").getAsString());
-            return true;
-        }
-
-        String opStr;
-        if (json.has("operation"))
-            opStr = json.get("operation").getAsString();
-        else
-            opStr = "ADDITION";
-        if (opStr.equalsIgnoreCase("base"))
-        {
-            UUID uuid = null;
-            if (json.has("uuid"))
-                uuid = UUID.fromString(json.get("uuid").getAsString());
-            
-            if (isTag)
-                registerTagItemBaseAttribute(id, attr, value, slot, uuid);
+                    AttributeModifier.Operation op;
+                    try {
+                        op = AttributeModifier.Operation.valueOf(opStr);
+                    } catch (IllegalArgumentException ex)
+                    {
+                        Attributesetter.LOGGER.warn("Curio item setter {} has an invalid operation {}", id, opStr);
+                        return null;
+                    }
+                    setters[i] = new CurioItemModifierSetter(attr, value, op, slot, uniqueIndex);
+                }
+                else
+                {
+                    setters[i] = new CurioItemModifierSetter(attr, value, AttributeModifier.Operation.ADDITION, slot, uniqueIndex);
+                }
+                i++;
+            }
+            if (setters.length == 1)
+                return setters[0];
             else
-                registerItemBaseAttribute(id, attr, value, slot, uuid);
-        }
-        else
-        {
-            var op = AttributeModifier.Operation.valueOf(opStr.toUpperCase());
-            AttributeModifier mod;
-            if (json.has("uuid"))
-                mod = new AttributeModifier(UUID.fromString(json.get("uuid").getAsString()), "ASMod", value, op);
-            else
-                mod = new AttributeModifier(UUID.randomUUID(), "ASMod", value, op);
-
-            if (isTag)
-                registerTagItemAttributeModifier(id, attr, mod, slot);
-            else
-                registerItemAttributeModifier(id, attr, mod, slot);
-        }
-
-        return true;
+                return new CompositeASSetter<ItemStack>(setters);
+        });
     }
 
     @SubscribeEvent
     public void curioAttributeModifier(CurioAttributeModifierEvent e)
     {
-        var stack = e.getItemStack();
-        var slot = e.getSlotContext().identifier();
-
-        var item = stack.getItem();
-        var id = ForgeRegistries.ITEMS.getKey(item);
-        for (var entry : BASE_TAG_ITEM_MODIFIERS.entrySet())
+        for (var entry : AttributeSetterAPI.getEntriesFor(e.getItemStack()))
         {
-            if (stack.is(TagKey.create(Registries.ITEM, entry.getKey()))
-                    && entry.getValue().containsKey(slot))
+            if (entry instanceof CurioItemSetter curioSetter)
             {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    e.removeAttribute(modEntry.getKey());
-                    var pair = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(pair.getB(), "ASMod", pair.getA(), AttributeModifier.Operation.ADDITION));
-                }
+                curioSetter.apply(e);
             }
         }
-        for (var entry : BASE_ITEM_MODIFIERS.entrySet())
-        {
-            if (entry.getKey().equals(id) && entry.getValue().containsKey(slot))
-            {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    e.removeAttribute(modEntry.getKey());
-                    var pair = modEntry.getValue();
-                    e.addModifier(modEntry.getKey(), new AttributeModifier(pair.getB(), "ASMod", pair.getA(), AttributeModifier.Operation.ADDITION));
-                }
-            }
-        }
-        for (var entry : TAG_ITEM_MODIFIERS.entrySet())
-        {
-            if (stack.is(TagKey.create(Registries.ITEM, entry.getKey())) && entry.getValue().containsKey(slot))
-            {
-                for (var modEntry : entry.getValue().get(slot).entrySet())
-                {
-                    var val = modEntry.getValue();
-                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
-                    e.addModifier(modEntry.getKey(), clone);
-                }
-            }
-        }
-
-        var modifiers = ITEM_MODIFIERS.getOrDefault(id, null);
-        if (modifiers != null)
-        {
-            var slotMods = modifiers.getOrDefault(slot, null);
-            if (slotMods != null)
-            {
-                for (var entry : slotMods.entrySet())
-                {
-                    var val = entry.getValue();
-                    var clone = new AttributeModifier(e.getUuid(), val.getName(), val.getAmount(), val.getOperation());
-                    e.addModifier(entry.getKey(), clone);
-                }
-            }
-        }
-
-    }
-
-    public static void registerItemAttributeModifier(ResourceLocation item, Attribute attr, AttributeModifier modifier, String slot) {
-        if (!ITEM_MODIFIERS.containsKey(item))
-            ITEM_MODIFIERS.put(item, new HashMap<>());
-        if (!ITEM_MODIFIERS.get(item).containsKey(slot))
-            ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
-
-        ITEM_MODIFIERS.get(item).get(slot).put(attr, modifier);
-    }
-    public static void registerTagItemAttributeModifier(ResourceLocation tag, Attribute attr, AttributeModifier modifier, String slot) {
-        if (!TAG_ITEM_MODIFIERS.containsKey(tag))
-            TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
-        if (!TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
-            TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
-
-        TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, modifier);
-    }
-    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, String slot) {
-        registerItemBaseAttribute(item, attr, baseValue, slot, null);
-    }
-    
-    public static void registerItemBaseAttribute(ResourceLocation item, Attribute attr, double baseValue, String slot, UUID uuid) {
-        if (!BASE_ITEM_MODIFIERS.containsKey(item))
-            BASE_ITEM_MODIFIERS.put(item, new HashMap<>());
-        if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
-            BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
-
-        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID(item.toString(), attr.getDescriptionId(), "curio:" + slot);
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
-    }
-    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, String slot) {
-        registerTagItemBaseAttribute(tag, attr, baseValue, slot, null);
-    }
-    
-    public static void registerTagItemBaseAttribute(ResourceLocation tag, Attribute attr, double baseValue, String slot, UUID uuid) {
-        if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
-            BASE_TAG_ITEM_MODIFIERS.put(tag, new HashMap<>());
-        if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
-            BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
-
-        UUID deterministicUuid = uuid != null ? uuid : generateDeterministicUUID("#" + tag.toString(), attr.getDescriptionId(), "curio:" + slot);
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, deterministicUuid));
-    }
-    
-    private static UUID generateDeterministicUUID(String identifier, String attribute, String slot) {
-        String combined = "AttributeSetter:" + identifier + ":" + attribute + ":" + slot;
-        return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -1,197 +1,343 @@
 package com.httpedro.attributesetter;
 
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import oshi.util.tuples.Pair;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.function.BiFunction;
+
+import org.apache.commons.lang3.function.TriFunction;
+
+import com.google.gson.JsonObject;
+import com.httpedro.attributesetter.selectors.ASSelector;
+import com.httpedro.attributesetter.selectors.entity.IdEntitySelector;
+import com.httpedro.attributesetter.selectors.item.IdItemSelector;
+import com.httpedro.attributesetter.setters.ASSetter;
 
 public class AttributeSetterAPI {
-    private static final Map<ResourceLocation, ASSelector> selectorTypes = new HashMap<>();
-    private static final Map<ResourceLocation, ASEntry> entryTypes = new HashMap<>();
-    static final Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>> ENTITY_ENTRIES = new HashMap<>();
-    // We cache ID selectors separately for performance, because they are exact matches and it'd be useless to iterate over all other selectors
-    static final Map<ResourceLocation, LinkedList<Pair<ASSelector, ASEntry>>> ENTITY_ID_CACHE = new HashMap<>();
-    static final Map<SelectorType, LinkedList<Pair<ASSelector, ASEntry>>> ITEM_ENTRIES = new HashMap<>();
+    private static final LinkedList<Pair<Integer, BiFunction<String, String, ASSelector<ItemStack>>>> itemSelectorBuilders = new LinkedList<>();
+    private static final LinkedList<Pair<Integer, BiFunction<String, String, ASSelector<LivingEntity>>>> entitySelectorBuilders = new LinkedList<>();
+    private static final LinkedList<Pair<Integer, TriFunction<JsonObject, String, ASSelector<LivingEntity>, ASSetter<LivingEntity>>>> entitySetterBuilders = new LinkedList<>();
+    private static final LinkedList<Pair<Integer, TriFunction<JsonObject, String, ASSelector<ItemStack>, ASSetter<ItemStack>>>> itemSetterBuilders = new LinkedList<>();
+
+    static final List<Pair<ASSelector<LivingEntity>, ASSetter<LivingEntity>[]>> entitySetters = new LinkedList<>();
+    // We cache ID selectors separately for performance, because they are exact matches and it'd be useless to iterate over all other selectors,
+    // this is kind of a hacky way to implement it but it saves so much performance it's worth it
+    static final Map<ResourceLocation, List<ASSetter<LivingEntity>>> entityIdCache = new HashMap<>();
+    static final List<Pair<ASSelector<ItemStack>, ASSetter<ItemStack>[]>> itemSetters = new LinkedList<>();
     // Same as above
-    static final Map<ResourceLocation, LinkedList<Pair<ASSelector, ASEntry>>> ITEM_ID_CACHE = new HashMap<>();
+    static final Map<ResourceLocation, List<ASSetter<ItemStack>>> itemIdCache = new HashMap<>();
 
-    public static void registerItemEntry(ASSelector selector, ASEntry entry)
+    public static ASSelector<ItemStack> parseItemSelector(String selectorString, String fileName)
     {
-        if (selector.type == SelectorType.ID)
+        int itemSelectorBuildersSize = itemSelectorBuilders.size();
+        for (int i = 0; i < itemSelectorBuildersSize; i++)
         {
-            ITEM_ID_CACHE.computeIfAbsent(selector.id, k -> new LinkedList<>());
-            ITEM_ID_CACHE.get(selector.id).add(new Pair<>(selector, entry));
-            return;
-        }
-        var entries = ITEM_ENTRIES.computeIfAbsent(selector.type, k -> new LinkedList<>());
-        if (entries.isEmpty())
-        {
-            entries.add(new Pair<>(selector, entry));
-            return;
-        }
-        // Insert based on priority: BASE > MODIFIER > DURABILITY
-        int insertIndex = 0;
-        for (var pair : entries)
-        {
-            var existingEntry = pair.getB();
-            if (entry.type == EntryType.BASE && existingEntry.type != EntryType.BASE)
-            {
-                break;
+            try {
+                var builder = itemSelectorBuilders.get(i);
+                var selector = builder.getB().apply(selectorString, fileName);
+                if (selector != null)
+                {
+                    return selector;
+                }
+            } catch (Exception e) {
+                Attributesetter.LOGGER.error("Error while parsing item selector string '{}' in file '{}':", selectorString, fileName, e);
             }
-            else if (entry.type == EntryType.MODIFIER && existingEntry.type == EntryType.DURABILITY)
-            {
-                break;
-            }
-            insertIndex++;
         }
-        entries.add(insertIndex, new Pair<>(selector, entry));
+        return null;
     }
-    public static void registerEntityEntry(ASSelector selector, ASEntry entry)
+    public static ASSelector<LivingEntity> parseEntitySelector(String selectorString, String fileName)
     {
-        ENTITY_ENTRIES.computeIfAbsent(selector.type, k -> new LinkedList<>());
-        if (selector.type == SelectorType.ID)
+        int entitySelectorBuildersSize = entitySelectorBuilders.size();
+        for (int i = 0; i < entitySelectorBuildersSize; i++)
         {
-            ENTITY_ID_CACHE.computeIfAbsent(selector.id, k -> new LinkedList<>());
-            ENTITY_ID_CACHE.get(selector.id).add(new Pair<>(selector, entry));
-            return;
+            try {
+                var builder = entitySelectorBuilders.get(i);
+                var selector = builder.getB().apply(selectorString, fileName);
+                if (selector != null)
+                {
+                    return selector;
+                }
+            } catch (Exception e) {
+                Attributesetter.LOGGER.error("Error while parsing entity selector string '{}' in file '{}':", selectorString, fileName, e);
+            }
         }
-        var entries = ENTITY_ENTRIES.get(selector.type);
-        if (entries.isEmpty())
+        return null;
+    }
+
+    public static ASSetter<ItemStack> parseItemSetter(JsonObject obj, String id, ASSelector<ItemStack> selector)
+    {
+        int itemSetterBuildersSize = itemSetterBuilders.size();
+        for (int i = 0; i < itemSetterBuildersSize; i++)
         {
-            entries.add(new Pair<>(selector, entry));
+            try {
+                var builder = itemSetterBuilders.get(i);
+                var setter = builder.getB().apply(obj, id, selector);
+                if (setter != null)
+                {
+                    return setter;
+                }
+            } catch (Exception e) {
+                Attributesetter.LOGGER.error("Error while parsing item setter with id '{}':", id, e);
+            }
+        }
+        return null;
+    }
+    public static ASSetter<LivingEntity> parseEntitySetter(JsonObject obj, String id, ASSelector<LivingEntity> selector)
+    {
+        int entitySetterBuildersSize = entitySetterBuilders.size();
+        for (int i = 0; i < entitySetterBuildersSize; i++)
+        {
+            try {
+                var builder = entitySetterBuilders.get(i);
+                var setter = builder.getB().apply(obj, id, selector);
+                if (setter != null)
+                {
+                    return setter;
+                }
+            } catch (Exception e) {
+                Attributesetter.LOGGER.error("Error while parsing entity setter with id '{}':", id, e);
+            }
+        }
+        return null;
+    }
+
+    public static void registerItemEntry(String selectorString, Pair<JsonObject, String>[] entries, String fileName)
+    {
+        var selector = parseItemSelector(selectorString, fileName);
+        if (selector == null)
+        {
+            Attributesetter.LOGGER.warn("Could not find a valid item selector for selector string '{}'", selectorString);
             return;
         }
 
-        if (entry.type == EntryType.BASE)
-            entries.addFirst(new Pair<>(selector, entry));
+        List<ASSetter<ItemStack>> setters = new ArrayList<>();
+        for (var entry : entries)
+        {
+            var setter = parseItemSetter(entry.getA(), entry.getB(), selector);
+            if (setter == null)
+            {
+                Attributesetter.LOGGER.warn("Could not find a valid item entry builder for entry '{}'", entry.getB().toString());
+                continue;
+            }
+
+            setters.add(setter);
+        }
+
+        // If the selector is an ID selector, add it to the cache
+        if (selector instanceof IdItemSelector idSelector)
+        {
+            var id = idSelector.id;
+            itemIdCache.putIfAbsent(id, new ArrayList<>());
+            itemIdCache.get(id).addAll(setters);
+        }
         else
-            entries.addLast(new Pair<>(selector, entry));
-    }
-
-    public static Collection<Pair<ASSelector, ASEntry>> possibleItemEntries(ResourceLocation id)
-    {
-        var ret = new ArrayList<Pair<ASSelector, ASEntry>>();
-        if (ITEM_ID_CACHE.containsKey(id))
-            ret.addAll(ITEM_ID_CACHE.get(id));
-        for (var entryList : ITEM_ENTRIES.values())
         {
-            ret.addAll(entryList);
-        }
-        return ret;
-    }
-    public static Collection<Pair<ASSelector, ASEntry>> possibleItemEntries(ResourceLocation id, SelectorType type)
-    {
-        if (type == SelectorType.ID)
-        {
-            if (ITEM_ID_CACHE.containsKey(id))
-                return ITEM_ID_CACHE.get(id);
-            return new ArrayList<>();
-        }
-        if (!ITEM_ENTRIES.containsKey(type)) return new ArrayList<>();
-        return ITEM_ENTRIES.get(type);
-    }
-    public static Collection<Pair<ASSelector, ASEntry>> possibleEntityEntries(ResourceLocation id)
-    {
-        var ret = new ArrayList<Pair<ASSelector, ASEntry>>();
-        if (ENTITY_ID_CACHE.containsKey(id))
-            ret.addAll(ENTITY_ID_CACHE.get(id));
-        for (var entryList : ENTITY_ENTRIES.values())
-        {
-            ret.addAll(entryList);
-        }
-        return ret;
-    }
-    public static Collection<Pair<ASSelector, ASEntry>> possibleEntityEntries(ResourceLocation id, SelectorType type)
-    {
-        if (type == SelectorType.ID)
-        {
-            if (ENTITY_ID_CACHE.containsKey(id))
-                return ENTITY_ID_CACHE.get(id);
-            else
-                return new ArrayList<>();
-        }
-        if (!ENTITY_ENTRIES.containsKey(type)) return new ArrayList<>();
-        return ENTITY_ENTRIES.get(type);
-    }
-
-    public static Collection<ASEntry> getEntriesFor(ItemStack stack, EquipmentSlot slot)
-    {
-        List<ASEntry> results = new ArrayList<>();
-
-        var item = stack.getItem();
-        var selectorOrder = List.of(SelectorType.TAG, SelectorType.NBT, SelectorType.ID);
-
-        for (var type : selectorOrder)
-        {
-            for (var entry : AttributeSetterAPI.possibleItemEntries(ForgeRegistries.ITEMS.getKey(item), type))
+            // Insert based on selector specificity(lower specificity at the start, higher at the end, so more specific selectors are checked last)
+            // This way, more specific selectors can override less specific ones
+            int index = 0;
+            int itemSettersSize = itemSetters.size();
+            for (int i = 0; i < itemSettersSize; i++)
             {
-                var selector = entry.getA();
-                var ase = entry.getB();
-                if (selector.test(stack) && ase.slot == slot)
+                var pair = itemSetters.get(i);
+                if (pair.getA().getSpecificity() > selector.getSpecificity())
                 {
-                    results.add(ase);
+                    break;
+                }
+                index++;
+            }
+            itemSetters.add(index, new Pair<>(selector, setters.toArray(new ASSetter[0])));
+        }
+    }
+    public static void registerEntityEntry(String selector, Pair<JsonObject, String>[] entries, String fileName)
+    {
+        var asSelector = parseEntitySelector(selector, fileName);
+        if (asSelector == null)
+        {
+            Attributesetter.LOGGER.warn("Could not find a valid entity selector for selector string '{}'", selector);
+            return;
+        }
+
+        List<ASSetter<LivingEntity>> setters = new ArrayList<>();
+        for (var entry : entries)
+        {
+            var setter = parseEntitySetter(entry.getA(), entry.getB(), asSelector);
+            if (setter == null)
+            {
+                Attributesetter.LOGGER.warn("Could not find a valid entity entry builder for entry '{}'", entry.getB().toString());
+                continue;
+            }
+
+            setters.add(setter);
+        }
+
+        // If the selector is an ID selector, add it to the cache
+        if (asSelector instanceof IdEntitySelector idSelector)
+        {
+            var id = idSelector.id;
+            entityIdCache.putIfAbsent(id, new ArrayList<>());
+            entityIdCache.get(id).addAll(setters);
+        }
+        else
+        {
+            // Insert based on selector specificity(lower specificity at the start, higher at the end, so more specific selectors are checked last)
+            // This way, more specific selectors can override less specific ones
+            int index = 0;
+            int entitySettersSize = entitySetters.size();
+            for (int i = 0; i < entitySettersSize; i++)
+            {
+                var pair = entitySetters.get(i);
+                if (pair.getA().getSpecificity() > asSelector.getSpecificity())
+                {
+                    break;
+                }
+                index++;
+            }
+            entitySetters.add(index, new Pair<>(asSelector, setters.toArray(new ASSetter[0])));
+        }
+    }
+
+    public static List<ASSetter<ItemStack>> getEntriesFor(ItemStack stack)
+    {
+        List<ASSetter<ItemStack>> result = new ArrayList<>();
+        var id = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        if (itemIdCache.containsKey(id))
+        {
+            result.addAll(itemIdCache.get(id));
+        }
+        int itemSettersSize = itemSetters.size();
+        for (int i = 0; i < itemSettersSize; i++)
+        {
+            var pair = itemSetters.get(i);
+            if (pair.getA().test(stack))
+            {
+                for (var setter : pair.getB())
+                {
+                    result.add(setter);
                 }
             }
         }
-
-        return results;
+        return result;
     }
 
-    public static Collection<ASEntry> getEntriesFor(LivingEntity entity)
+    public static List<ASSetter<LivingEntity>> getEntriesFor(LivingEntity entity)
     {
-        List<ASEntry> results = new ArrayList<>();
-
-        var entityType = entity.getType();
-        var id = EntityType.getKey(entityType);
-        var selectorOrder = List.of(SelectorType.TAG, SelectorType.NBT, SelectorType.ID);
-
-        for (var type : selectorOrder)
+        List<ASSetter<LivingEntity>> result = new ArrayList<>();
+        var id = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+        if (entityIdCache.containsKey(id))
         {
-            for (var entry : AttributeSetterAPI.possibleEntityEntries(id, type))
+            result.addAll(entityIdCache.get(id));
+        }
+        int entitySettersSize = entitySetters.size();
+        for (int i = 0; i < entitySettersSize; i++)
+        {
+            var pair = entitySetters.get(i);
+            if (pair.getA().test(entity))
             {
-                var selector = entry.getA();
-                var ase = entry.getB();
-                if (selector.test(entity))
+                for (var setter : pair.getB())
                 {
-                    results.add(ase);
+                    result.add(setter);
                 }
             }
         }
-
-        return results;
+        return result;
     }
     
-    public static void registerSelector(ResourceLocation id, ASSelector selector)
+    /**
+     * Registers a new item selector parser
+     * @param priority The priority of the parser, higher priority parsers are checked first
+     * @param selector The selector parser function. The first parameter is the selector string, the second is the file name
+     */
+    public static void registerItemSelectorBuilder(int priority, BiFunction<String, String, ASSelector<ItemStack>> selector)
     {
-        selectorTypes.put(id, selector);
+        int index = 0;
+        int itemSelectorBuildersSize = itemSelectorBuilders.size();
+        for (int i = 0; i < itemSelectorBuildersSize; i++)
+        {
+            var pair = itemSelectorBuilders.get(i);
+            if (priority > pair.getA())
+            {
+                break;
+            }
+            index++;
+        }
+        itemSelectorBuilders.add(index, new Pair<>(priority, selector));
     }
-    public static void registerEntry(ResourceLocation id, ASEntry entry)
+    /**
+     * Registers a new entity selector parser
+     * @param priority The priority of the parser, higher priority parsers are checked first
+     * @param selector The selector parser function. The first parameter is the selector string, the second is the file name
+     */
+    public static void registerEntitySelectorBuilder(int priority, BiFunction<String, String, ASSelector<LivingEntity>> selector)
     {
-        entryTypes.put(id, entry);
+        int index = 0;
+        int entitySelectorBuildersSize = entitySelectorBuilders.size();
+        for (int i = 0; i < entitySelectorBuildersSize; i++)
+        {
+            var pair = entitySelectorBuilders.get(i);
+            if (priority > pair.getA())
+            {
+                break;
+            }
+            index++;
+        }
+        entitySelectorBuilders.add(index, new Pair<>(priority, selector));
+    }
+
+    /**
+     * Registers a new entity setter builder
+     * @param priority The priority of the builder, higher priority builders are checked first
+     * @param builder The setter builder function. The first parameter is the JSON object, the second is the entry ID, the third is the selector. You can assume the ID is unique. The selector may be null.
+     */
+    public static void registerEntitySetterBuilder(int priority, TriFunction<JsonObject, String, ASSelector<LivingEntity>, ASSetter<LivingEntity>> builder)
+    {
+        int index = 0;
+        int entitySetterBuildersSize = entitySetterBuilders.size();
+        for (int i = 0; i < entitySetterBuildersSize; i++)
+        {
+            var pair = entitySetterBuilders.get(i);
+            if (priority > pair.getA())
+            {
+                break;
+            }
+            index++;
+        }
+        entitySetterBuilders.add(index, new Pair<>(priority, builder));
+    }
+
+    /**
+     * Registers a new item setter builder
+     * @param priority The priority of the builder, higher priority builders are checked first
+     * @param builder The setter builder function. The first parameter is the JSON object, the second is the entry ID, the third is the selector. You can assume the ID is unique. The selector may be null.
+     */
+    public static void registerItemSetterBuilder(int priority, TriFunction<JsonObject, String, ASSelector<ItemStack>, ASSetter<ItemStack>> builder)
+    {
+        int index = 0;
+        int itemSetterBuildersSize = itemSetterBuilders.size();
+        for (int i = 0; i < itemSetterBuildersSize; i++)
+        {
+            var pair = itemSetterBuilders.get(i);
+            if (priority > pair.getA())
+            {
+                break;
+            }
+            index++;
+        }
+        itemSetterBuilders.add(index, new Pair<>(priority, builder));
     }
     
     public static void clearAll()
     {
-        ENTITY_ENTRIES.clear();
-        ENTITY_ID_CACHE.clear();
-        ITEM_ENTRIES.clear();
-        ITEM_ID_CACHE.clear();
-    }
-    
-    public static UUID generateDeterministicUUID(String modSource, String identifier, String attribute, String slot) {
-        String combined = modSource + ":" + identifier + ":" + attribute + ":" + slot + ":";
-        return UUID.nameUUIDFromBytes(combined.getBytes(StandardCharsets.UTF_8));
+        entitySetters.clear();
+        entityIdCache.clear();
+        itemSetters.clear();
+        itemIdCache.clear();
     }
 }

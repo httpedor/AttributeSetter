@@ -131,7 +131,7 @@ If no namespace is provided, it uses the filename. For example, if I'm in file "
 **NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all sharpness 5 swords like this:
 ```json5
 {
-  "{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}": [
+  "{tag:{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}}": [
     {
       "attribute": "minecraft:generic.attack_damage",
       "value": 10,
@@ -139,7 +139,7 @@ If no namespace is provided, it uses the filename. For example, if I'm in file "
       "slot": "mainhand"
     }
   ],
-  "minecraft:golden_sword{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}": [
+  "minecraft:golden_sword{tag:{Enchantments:[{id:\"minecraft:sharpness\",lvl:5s}]}}": [
     {
       "attribute": "minecraft:generic.attack_damage",
       "value": 10,
@@ -150,6 +150,7 @@ If no namespace is provided, it uses the filename. For example, if I'm in file "
 }
 ```
 This would increase the attack damage of all sharpness 5 swords by 10, and increase the attack damage of golden swords with sharpness 5 by another 10.
+To see what NBT an item has, you can use the `/data get` command. For example, to see the NBT of the item in your main hand, you can use `/data get entity @s SelectedItem`
 
 ### UUID
 This is how minecraft knows which item has which modifier. ~~If you only have one modifier in the item you can ignore this, but if you have more than one, you should generate a UUID for each one. You can use [this site](https://www.uuidgenerator.net/) to generate one. BASE operation doesn't need a UUID~~. This is no longer necessary as of update 1.11
@@ -164,4 +165,6 @@ Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL`, `BASE` and `DURABILITY`. T
 Default is ADDITION
 
 ### Slot
-Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand, if the item's class extends ArmorItem(all armor items in the game do), the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot. You still have to specify the Curios slot.
+Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand,
+If the item's class extends ArmorItem(all armor items in the game do), the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot.
+If the slot is not specified and the item has curio slots, it will apply to all curio slots this item can fit in.
