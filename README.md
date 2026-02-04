@@ -167,4 +167,3 @@ Default is ADDITION
 ### Slot
 Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand,
 If the item's class extends ArmorItem(all armor items in the game do), the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot.
-If the slot is not specified and the item has curio slots, it will apply to all curio slots this item can fit in.
