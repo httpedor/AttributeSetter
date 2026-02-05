@@ -45,6 +45,7 @@ In the example above, all creepers will have 5 health, and +10 follow range. All
 ### Object Key
 Which entity ID will be changed. If the first character is a # the key is treated as a tag. In the example above, all entities tagged as raiders will have +8 health, and all creepers will have 5 health. If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing entity "void_worm", instead of typing "alexsmobs:voidworm", I can just type "voidworm"
 **NEW**: You can now use `!` at the start of the key to negate it. For example: `!minecraft:zombie` would apply the attribute to all entities except zombies.
+**NEW**: You can now use the `&&` and `||` operators to combine multiple selectors. For example: `minecraft:skeleton || minecraft:stray` would apply the attribute to both skeletons and strays, while `#minecraft:undead && !minecraft:stray` would apply the attribute to all undead except strays.
 **NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all turtles with an egg like this:
 ```json5
 {
@@ -128,6 +129,7 @@ Which item ID will be changed.
 If the first character is a # the key is treated as a tag.
 If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings".
 **NEW**: You can now use `!` at the start of the key to negate it. For example: `!minecraft:diamond_sword` would apply the attribute to all items except diamond swords.
+**NEW**: You can now use the `&&` and `||` operators to combine multiple selectors. For example: `minecraft:iron_sword || minecraft:stone_sword` would apply the attribute to both iron and stone swords, while `#minecraft:swords && !minecraft:stone_sword` would apply the attribute to all swords except stone swords.
 **NEW**: You can now use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all sharpness 5 swords like this:
 ```json5
 {

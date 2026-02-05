@@ -2,8 +2,6 @@ package com.httpedro.attributesetter.compat;
 
 import com.httpedro.attributesetter.AttributeSetterAPI;
 import com.httpedro.attributesetter.Attributesetter;
-import com.httpedro.attributesetter.selectors.CompositeASSelector;
-import com.httpedro.attributesetter.selectors.item.IdItemSelector;
 import com.httpedro.attributesetter.setters.ASSetter;
 import com.httpedro.attributesetter.setters.CompositeASSetter;
 

@@ -2,7 +2,6 @@ package com.httpedro.attributesetter.compat;
 
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.item.ItemStack;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 
 public class CurioItemModifierSetter extends CurioItemSetter{

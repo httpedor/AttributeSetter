@@ -58,6 +58,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod(Attributesetter.MODID)
@@ -228,6 +229,32 @@ public class Attributesetter {
         });
 
         // Composite selectors
+        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
+            if (str.startsWith("!"))
+            {
+                var actualStr = str.substring(1).trim();
+                var subSelector = AttributeSetterAPI.parseItemSelector(actualStr, fileName);
+                if (subSelector != null)
+                {
+                    subSelector.inverted = true;
+                    return subSelector;
+                }
+            }
+            return null;
+        });
+        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
+            if (str.startsWith("!"))
+            {
+                var actualStr = str.substring(1).trim();
+                var subSelector = AttributeSetterAPI.parseEntitySelector(actualStr, fileName);
+                if (subSelector != null)
+                {
+                    subSelector.inverted = true;
+                    return subSelector;
+                }
+            }
+            return null;
+        });
         AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
             CompositeASSelector.Mode mode;
             String delimiter;
@@ -263,7 +290,7 @@ public class Attributesetter {
             if (str.contains("||"))
             {
                 mode = CompositeASSelector.Mode.OR;
-                delimiter = "\\|\\|";
+                delimiter = "||";
             }
             else if (str.contains("&&"))
             {
@@ -273,7 +300,7 @@ public class Attributesetter {
             else
                 return null;
 
-            var parts = str.split(delimiter);
+            var parts = str.split(Pattern.quote(delimiter));
             var selectors = new ArrayList<ASSelector<ItemStack>>();
             for (var part : parts)
             {
@@ -663,7 +690,7 @@ public class Attributesetter {
                             continue;
                         }
                         var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
-                        var line = Component.literal(" ").append(Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.minus.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color));
+                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.minus.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
                         lines.add(slotIndexes.get(slot) + i + 1, line);
                         i++;
                     }

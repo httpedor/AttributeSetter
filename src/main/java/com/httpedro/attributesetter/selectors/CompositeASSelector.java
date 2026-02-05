@@ -24,11 +24,22 @@ public class CompositeASSelector<T> extends ASSelector<T> {
 
     @Override
     protected boolean testImpl(T obj) {
-        for (var selector : selectors) {
-            if (!selector.test(obj))
+        switch (mode) {
+            case AND:
+                for (var selector : selectors) {
+                    if (!selector.test(obj))
+                        return false;
+                }
+                return true;
+            case OR:
+                for (var selector : selectors) {
+                    if (selector.test(obj))
+                        return true;
+                }
+                return false;
+            default:
                 return false;
         }
-        return true;
     }
     @Override
     public float getSpecificity() {
