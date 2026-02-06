@@ -690,7 +690,7 @@ public class Attributesetter {
                             continue;
                         }
                         var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
-                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.minus.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
+                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.take.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
                         lines.add(slotIndexes.get(slot) + i + 1, line);
                         i++;
                     }
