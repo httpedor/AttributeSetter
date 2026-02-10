@@ -7,13 +7,17 @@ import com.httpedro.attributesetter.selectors.ASSelector;
 import com.httpedro.attributesetter.selectors.CompositeASSelector;
 import com.httpedro.attributesetter.selectors.entity.IdEntitySelector;
 import com.httpedro.attributesetter.selectors.entity.NbtEntitySelector;
+import com.httpedro.attributesetter.selectors.entity.RegexEntitySelector;
 import com.httpedro.attributesetter.selectors.entity.TagEntitySelector;
 import com.httpedro.attributesetter.selectors.item.IdItemSelector;
 import com.httpedro.attributesetter.selectors.item.NbtItemSelector;
+import com.httpedro.attributesetter.selectors.item.RegexItemSelector;
 import com.httpedro.attributesetter.selectors.item.TagItemSelector;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeModifierSetter;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeSetter;
 import com.httpedro.attributesetter.setters.item.ItemAttributeBaseSetter;
+import com.httpedro.attributesetter.setters.item.ItemAttributeConversionSetter;
+import com.httpedro.attributesetter.setters.item.ItemAttributeDependencySetter;
 import com.httpedro.attributesetter.setters.item.ItemAttributeModifierSetter;
 import com.httpedro.attributesetter.setters.item.ItemAttributeSetter;
 import com.httpedro.attributesetter.setters.item.ItemDurabilitySetter;
@@ -399,6 +403,25 @@ public class Attributesetter {
             }
             return null;
         });
+
+        AttributeSetterAPI.registerEntitySelectorBuilder(99, (str, fileName) -> {
+            var prefix = "regex:";
+            if (str.contains(prefix))
+            {
+                var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
+                return new RegexEntitySelector(regex);
+            }
+            return null;
+        });
+        AttributeSetterAPI.registerItemSelectorBuilder(99, (str, fileName) -> {
+            var prefix = "regex:";
+            if (str.contains(prefix))
+            {
+                var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
+                return new RegexItemSelector(regex);
+            }
+            return null;
+        });
     }
     private void setupSetters()
     {
@@ -516,6 +539,55 @@ public class Attributesetter {
             return new ItemAttributeModifierSetter(attr, op, value, slot, id);
         });
 
+        // Conversion
+        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+            var attrElement = obj.get("attribute");
+            var valueElement = obj.get("amount");
+            var rateElement = obj.get("rate");
+            var opElement = obj.get("operation");
+            var fromElement = obj.get("from");
+            if (attrElement == null || opElement == null || fromElement == null)
+                return null;
+            if (!opElement.getAsString().equalsIgnoreCase("conversion"))
+                return null;
+            var toAttr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrElement.getAsString()));
+            var fromAttr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(fromElement.getAsString()));
+            var amountConverted = valueElement != null ? valueElement.getAsFloat() : 1.0f;
+            var conversionRate = rateElement != null ? rateElement.getAsFloat() : 1.0f;
+            if (fromAttr == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find source attribute {} in entry {}", fromElement.getAsString(), id);
+                return null;
+            }
+
+            return new ItemAttributeConversionSetter(fromAttr, toAttr, amountConverted, conversionRate, id.toString());
+        });
+        // Dependency
+        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+            var attrElement = obj.get("attribute");
+            var multiplierElement = obj.get("multiplier");
+            var opElement = obj.get("operation");
+            var dependencyElement = obj.get("dependency");
+            if (attrElement == null || opElement == null || multiplierElement == null)
+                return null;
+            if (!opElement.getAsString().equalsIgnoreCase("dependency"))
+                return null;
+            var attr = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(attrElement.getAsString()));
+            var dependency = ForgeRegistries.ATTRIBUTES.getValue(new ResourceLocation(dependencyElement.getAsString()));
+            var multiplier = multiplierElement != null ? multiplierElement.getAsFloat() : 1.0f;
+            if (attr == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find target attribute {} in entry {}", attrElement.getAsString(), id);
+                return null;
+            }
+            if (dependency == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find dependency attribute {} in entry {}", dependencyElement.getAsString(), id);
+                return null;
+            }
+
+            return new ItemAttributeDependencySetter(attr, dependency, multiplier, id.toString());
+        });
     }
 
     private EquipmentSlot parseItemSlot(JsonElement slotElement, String id, ASSelector<ItemStack> selector)
@@ -690,7 +762,7 @@ public class Attributesetter {
                             continue;
                         }
                         var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
-                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.take.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
+                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.take.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(Math.abs(value))).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
                         lines.add(slotIndexes.get(slot) + i + 1, line);
                         i++;
                     }
