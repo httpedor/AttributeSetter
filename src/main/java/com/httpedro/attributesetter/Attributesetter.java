@@ -40,6 +40,7 @@ import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.ItemAttributeModifierEvent;
 import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.entity.living.BabyEntitySpawnEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
@@ -203,6 +204,14 @@ public class Attributesetter {
             return;
 
         processEntity(entity);
+    }
+    @SubscribeEvent
+    public void onEntityBred(BabyEntitySpawnEvent e)
+    {
+        var world = e.getChild().level();
+        if (world.isClientSide())
+            return;
+        processEntity(e.getChild());
     }
 
     //TODO: Selectors that get re-checkd on certain events (like NBT changes)
