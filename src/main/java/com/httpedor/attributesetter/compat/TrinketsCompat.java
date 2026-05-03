@@ -1,11 +1,11 @@
 package com.httpedor.attributesetter.compat;
 
 import com.google.gson.JsonObject;
-import dev.emi.trinkets.api.TrinketsApi;
 import net.minecraft.entity.attribute.EntityAttribute;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
+import oshi.util.tuples.Pair;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,8 +15,8 @@ public class TrinketsCompat {
 
     public static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> ITEM_MODIFIERS = new HashMap<>();
     public static final Map<Identifier, Map<String, Map<EntityAttribute, EntityAttributeModifier>>> TAG_ITEM_MODIFIERS = new HashMap<>();
-    public static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_ITEM_MODIFIERS = new HashMap<>();
-    public static final Map<Identifier, Map<String, Map<EntityAttribute, Double>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, Pair<Double, UUID>>>> BASE_ITEM_MODIFIERS = new HashMap<>();
+    public static final Map<Identifier, Map<String, Map<EntityAttribute, Pair<Double, UUID>>>> BASE_TAG_ITEM_MODIFIERS = new HashMap<>();
 
     public static boolean shouldCurioHandle(String idStr, JsonObject json)
     {
@@ -104,7 +104,7 @@ public class TrinketsCompat {
         if (!BASE_ITEM_MODIFIERS.get(item).containsKey(slot))
             BASE_ITEM_MODIFIERS.get(item).put(slot, new HashMap<>());
 
-        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, baseValue);
+        BASE_ITEM_MODIFIERS.get(item).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
     }
     public static void registerTagItemBaseAttribute(Identifier tag, EntityAttribute attr, double baseValue, String slot) {
         if (!BASE_TAG_ITEM_MODIFIERS.containsKey(tag))
@@ -112,7 +112,7 @@ public class TrinketsCompat {
         if (!BASE_TAG_ITEM_MODIFIERS.get(tag).containsKey(slot))
             BASE_TAG_ITEM_MODIFIERS.get(tag).put(slot, new HashMap<>());
 
-        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, baseValue);
+        BASE_TAG_ITEM_MODIFIERS.get(tag).get(slot).put(attr, new Pair<>(baseValue, UUID.randomUUID()));
     }
 }
 

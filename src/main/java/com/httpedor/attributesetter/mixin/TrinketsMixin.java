@@ -3,7 +3,6 @@ package com.httpedor.attributesetter.mixin;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
-import com.httpedor.attributesetter.AttributeSetterAPI;
 import com.httpedor.attributesetter.compat.TrinketsCompat;
 import dev.emi.trinkets.api.SlotReference;
 import dev.emi.trinkets.api.Trinket;
@@ -19,15 +18,15 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import oshi.util.tuples.Pair;
 
 import java.util.ArrayList;
 import java.util.Optional;
 import java.util.UUID;
 
+@Pseudo
 @Mixin(Trinket.class)
 public class TrinketsMixin {
 
@@ -76,8 +75,8 @@ public class TrinketsMixin {
                 for (var modEntry : entry.getValue().get(slotName).entrySet())
                 {
                     map.removeAll(modEntry.getKey());
-                    var val = modEntry.getValue();
-                    map.put(modEntry.getKey(), new EntityAttributeModifier(uuid, "ASMod", val, EntityAttributeModifier.Operation.ADDITION));
+                    Pair<Double, UUID> val = modEntry.getValue();
+                    map.put(modEntry.getKey(), new EntityAttributeModifier(val.getB(), "ASMod", val.getA(), EntityAttributeModifier.Operation.ADDITION));
                 }
             }
         }
@@ -88,8 +87,8 @@ public class TrinketsMixin {
                 for (var modEntry : entry.getValue().get(slotName).entrySet())
                 {
                     map.removeAll(modEntry.getKey());
-                    var val = modEntry.getValue();
-                    map.put(modEntry.getKey(), new EntityAttributeModifier(uuid, "ASMod", val, EntityAttributeModifier.Operation.ADDITION));
+                    Pair<Double, UUID> val = modEntry.getValue();
+                    map.put(modEntry.getKey(), new EntityAttributeModifier(val.getB(), "ASMod", val.getA(), EntityAttributeModifier.Operation.ADDITION));
                 }
             }
         }
