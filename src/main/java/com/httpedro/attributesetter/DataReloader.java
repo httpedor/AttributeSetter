@@ -24,6 +24,11 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         super(GSON, "attributesetter");
     }
 
+    @Override
+    public String getName() {
+        return "AttributeSeter";
+    }
+
     public void addEntry(ResourceLocation res, JsonElement jsonElement)
     {
         entries.put(res, jsonElement);
@@ -34,6 +39,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         var mode = splitted[0];
         var fName = splitted[splitted.length - 1];
         var obj = jsonElement.getAsJsonObject();
+        int entryNum = 0;
         for (var entry : obj.entrySet())
         {
             int i = 0;
@@ -41,7 +47,12 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
             Pair<JsonObject, String>[] modsWithIds = new Pair[mods.size()];
             for (var modElement : mods)
             {
-                var entryPath = res.getNamespace() + ":" + fName + "/" + entry.getKey() + "/" + i;
+                var selector = entry.getKey();
+                if (!selector.matches("[a-z0-9/._-]"))
+                {
+                    selector = selector.replaceAll("[^a-z0-9/._-]", entryNum + "");
+                }
+                var entryPath = res.getNamespace() + "/" + fName + "/" + selector + "/" + i;
                 var modJson = modElement.getAsJsonObject();
                 modsWithIds[i] = new Pair<>(modJson, entryPath);
                 i++;
@@ -56,6 +67,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                 default:
                     break;
             }
+            entryNum++;
         }
     }
 

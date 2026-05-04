@@ -75,7 +75,7 @@ Keep in mind that NBT selectors are only checked when the entity is first loaded
 Which attribute should be changed, supports modded attributes.
 
 ### Operation
-Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL`, and `BASE`. The first tree are explained in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations), and BASE means it will override the default base value for that attribute. Default is BASE
+Can be `ADD_VALUE`(or `ADDITION`), `ADD_MULTIPLIED_BASE`(or `MULTIPLY_BASE`), `ADD_MULTIPLIED_TOTAL`(or `MULTIPLY_TOTAL`), and `BASE`. The first tree are explained in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations), and BASE means it will override the default base value for that attribute. Default is BASE
 
 ## Items
 Inside your datapack namespace folder, create a `attributesetter\item` folder, and inside it you can put as many json files as you want, with this format:
@@ -128,10 +128,14 @@ In the example above, all swords have +8 health, and all sticks will deal +5 dam
 ### Object Key
 Which item ID will be changed.
 If the first character is a # the key is treated as a tag.
+
 If no namespace is provided, it uses the filename. For example, if I'm in file "alexsmobs.json", and I'm editing item "emu_leggings", instead of typing "alexsmobs:emu_leggings", I can just type "emu_leggings".
+
 **NEW**: You can use regex to match item names with the regex prefix. For example, to match all items that have "diamond_" in their id, you can use `regex:.*diamond_.*`
 You can use `!` at the start of the key to negate it. For example: `!minecraft:diamond_sword` would apply the attribute to all items except diamond swords.
+
 You can use the `&&` and `||` operators to combine multiple selectors. For example: `minecraft:iron_sword || minecraft:stone_sword` would apply the attribute to both iron and stone swords, while `#minecraft:swords && !minecraft:stone_sword` would apply the attribute to all swords except stone swords.
+
 You can use NBT selectors to apply attributes only to items with specific NBT data. For example, you can target all sharpness 5 swords like this:
 ```json5
 {
@@ -165,8 +169,11 @@ Which attribute should be changed, supports modded attributes.
 ### Operation
 Can be `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL`, `BASE`, `DURABILITY`, `DEPENDENCY`, `CONVERSION`. The first three are in the [MC Wiki](https://minecraft.fandom.com/wiki/Attribute#Operations). 
 `BASE` removes all other modifiers for that attribute and sets the value to the one in the json file.
+
 `DURABILITY` is a special operation that only works with items that can break. It overrides the item's durability to the value in the json file.
+
 Default is ADDITION
+
 **NEW**: `DEPENDENCY` sets the attribute value based on another attribute. It requires two additional fields: `dependency`, which is the attribute to base the value on, and `multiplier`, which is the value to multiply the dependency attribute by. For example, if you want to set the attack damage of an item to be double that item's attack speed, you would use:
 ```json5
 {
@@ -209,5 +216,6 @@ This is useful for when you are changing many items with the same selector. For 
 ```
 
 ### Slot
-Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand,
+Can be mainhand, offhand, head, chest, legs, feet, or any Curios slot if prefixed with "curio:". Default value is mainhand
+
 If the item's class extends ArmorItem(all armor items in the game do), the default value is based on the armor slot. This means that for most armors, you don't have to specify the slot.

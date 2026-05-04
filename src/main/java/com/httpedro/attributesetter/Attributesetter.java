@@ -94,7 +94,7 @@ public class Attributesetter {
         isApothic = ModList.get().isLoaded("attributeslib");
     }
 
-    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void datapackReload(AddReloadListenerEvent e)
     {
         ra = e.getRegistryAccess();
@@ -412,15 +412,37 @@ public class Attributesetter {
                     return new EntityAttributeSetter(attr.get(), value);
                 else
                 {
-                    try
+                    AttributeModifier.Operation op = null;
+                    switch (opElement.getAsString().toUpperCase())
                     {
-                        var op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
-                        return new EntityAttributeModifierSetter(attr.get(), op, value, id);
-                    } catch (Exception ex)
-                    {
-                        Attributesetter.LOGGER.error("Failed to parse operation {}", opElement.getAsString());
-                        return null;
+                        case "+":
+                        case "ADD":
+                        case "ADDITION":
+                            op = AttributeModifier.Operation.ADD_VALUE;
+                            break;
+                        case "PERCENT":
+                        case "%":
+                        case "MULTIPLY_BASE":
+                            op = AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
+                            break;
+                        case "*":
+                        case "x":
+                        case "MULTIPLY_TOTAL":
+                            op = AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
+                            break;
                     }
+                    if (op == null)
+                    {
+                        try
+                        {
+                            op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
+                        } catch (Exception ex)
+                        {
+                            Attributesetter.LOGGER.error("Failed to parse operation {}", opElement.getAsString());
+                            return null;
+                        }
+                    }
+                    return new EntityAttributeModifierSetter(attr.get(), op, value, id);
                 }
             }
             return null;
@@ -496,14 +518,35 @@ public class Attributesetter {
             if (opElement == null)
                 return new ItemAttributeModifierSetter(attr.get(), AttributeModifier.Operation.ADD_VALUE, value, slot, id);
 
-            AttributeModifier.Operation op;
-            try
+            AttributeModifier.Operation op = null;
+            switch (opElement.getAsString().toUpperCase())
             {
-                op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
-            } catch (Exception ex)
+                case "+":
+                case "ADD":
+                case "ADDITION":
+                    op = AttributeModifier.Operation.ADD_VALUE;
+                    break;
+                case "PERCENT":
+                case "%":
+                case "MULTIPLY_BASE":
+                    op = AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
+                    break;
+                case "*":
+                case "x":
+                case "MULTIPLY_TOTAL":
+                    op = AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
+                    break;
+            }
+            if (op == null)
             {
-                Attributesetter.LOGGER.error("Failed to parse operation {} in entry {}", opElement.getAsString(), id);
-                return null;
+                try
+                {
+                    op = AttributeModifier.Operation.valueOf(opElement.getAsString().toUpperCase());
+                } catch (Exception ex)
+                {
+                    Attributesetter.LOGGER.error("Failed to parse operation {} in entry {}", opElement.getAsString(), id);
+                    return null;
+                }
             }
             return new ItemAttributeModifierSetter(attr.get(), op, value, slot, id);
         });

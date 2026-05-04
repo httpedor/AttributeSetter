@@ -2,6 +2,8 @@ package com.httpedro.attributesetter.compat;
 
 import com.httpedro.attributesetter.AttributeSetterAPI;
 import com.httpedro.attributesetter.Attributesetter;
+import com.httpedro.attributesetter.selectors.CompositeASSelector;
+import com.httpedro.attributesetter.selectors.item.IdItemSelector;
 import com.httpedro.attributesetter.setters.ASSetter;
 import com.httpedro.attributesetter.setters.CompositeASSetter;
 
@@ -10,6 +12,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.loading.FMLLoader;
+import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 
 public class CuriosCompat {
@@ -22,9 +26,8 @@ public class CuriosCompat {
             String[] slots;
             if (slotEl == null)
             {
-                return null;
                 // This is not working because of load order. The Curios mod loads the data packs after Attributesetter, so I can't get the item slots here.
-                /*ResourceLocation itemId = null;
+                ResourceLocation itemId = null;
                 if (selector instanceof IdItemSelector idSelector)
                     itemId = idSelector.id;
                 else if (selector instanceof CompositeASSelector compositeSelector)
@@ -35,7 +38,6 @@ public class CuriosCompat {
                         if (subSelector instanceof IdItemSelector idSelector)
                         {
                             itemId = idSelector.id;
-                            Attributesetter.LOGGER.warn("Curio item setter {} is missing a slot, assuming curios:body for item {}", id, itemId);
                             break;
                         }
                     }   
@@ -43,7 +45,7 @@ public class CuriosCompat {
 
                 if (itemId == null)
                     return null;
-                var item = ForgeRegistries.ITEMS.getValue(itemId);
+                var item = BuiltInRegistries.ITEM.get(itemId);
                 if (item == null)
                     return null;
                 var itemstack = new ItemStack(item);
@@ -56,7 +58,7 @@ public class CuriosCompat {
                 {
                     slots[i] = entry.getValue().getIdentifier();
                     i++;
-                }*/
+                }
             }
             else if (!slotEl.getAsString().startsWith("curio:"))
                 return null;

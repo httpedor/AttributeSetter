@@ -15,7 +15,6 @@ public class ItemAttributeDependencySetter extends ItemAttributeSetter{
     public float multiplier = 1;
     public Holder<Attribute> dependency;
     public final ResourceLocation id;
-    public EquipmentSlotGroup slot = null;
     public ItemAttributeDependencySetter(Holder<Attribute> attribute, Holder<Attribute> dependency, float multiplier, String uniqueIndex) {
         this.attribute = attribute;
         this.dependency = dependency;
@@ -28,6 +27,7 @@ public class ItemAttributeDependencySetter extends ItemAttributeSetter{
         if (multiplier == 0)
             return;
         var modifiers = new ArrayList<ItemAttributeModifiers.Entry>();
+        EquipmentSlotGroup slot = null;
         for (var mod : e.getModifiers())
         {
             if (mod.attribute().equals(dependency))

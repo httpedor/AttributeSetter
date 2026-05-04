@@ -121,7 +121,8 @@ public class AttributeSetterAPI {
         List<ASSetter<ItemStack>> setters = new ArrayList<>();
         for (var entry : entries)
         {
-            var setter = parseItemSetter(entry.getA(), entry.getB(), selector);
+            var id = entry.getB();
+            var setter = parseItemSetter(entry.getA(), id, selector);
             if (setter == null)
             {
                 Attributesetter.LOGGER.warn("Could not find a valid item entry builder for entry '{}'", entry.getB().toString());
