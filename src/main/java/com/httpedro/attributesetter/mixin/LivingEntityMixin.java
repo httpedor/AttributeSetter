@@ -15,7 +15,7 @@ public class LivingEntityMixin implements ASLivingEntity {
     @Unique
     public boolean as$loaded = false;
 
-    @Inject(method = "addAdditionalSaveData", at = @At(value = "HEAD"))
+    /*@Inject(method = "addAdditionalSaveData", at = @At(value = "HEAD"))
     public void save(CompoundTag nbt, CallbackInfo ci) {
         nbt.putBoolean("ASLoaded", as$loaded);
     }
@@ -24,7 +24,7 @@ public class LivingEntityMixin implements ASLivingEntity {
     public void load(CompoundTag nbt, CallbackInfo ci) {
         if (nbt.contains("ASLoaded"))
             as$setLoaded();
-    }
+    }*/
 
 
     @Override
@@ -37,3 +37,4 @@ public class LivingEntityMixin implements ASLivingEntity {
         as$loaded = true;
     }
 }
+
