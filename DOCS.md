@@ -167,6 +167,61 @@ These entries add attribute modifiers to item stacks and use the `slot` field.
 - `dependency` (source)
 - `multiplier` (required)
 
+### Tooltip add
+
+Adds one or more tooltip lines/components to matching item stacks.
+
+```json
+{
+  "minecraft:diamond_sword": [
+    {
+      "operation": "TOOLTIP_ADD",
+      "tooltip": [
+        "Simple extra line",
+        { "text": "Styled line", "color": "gold", "italic": false }
+      ]
+    }
+  ]
+}
+```
+
+- `operation`: `TOOLTIP_ADD` (aliases: `TOOLTIPADD`, `TOOLTIP`)
+- `tooltip` or `components` (required):
+  - string = one literal line
+  - array = each element can be a string (literal) or a JSON text component object
+
+### Tooltip modify
+
+Inserts, replaces, or removes tooltip lines/components at a target index.
+
+```json
+{
+  "minecraft:bow": [
+    {
+      "operation": "TOOLTIP_MODIFY",
+      "type": "REPLACE",
+      "index": 1,
+      "components": [
+        { "text": "Replaced line", "color": "aqua" }
+      ]
+    },
+    {
+      "operation": "TOOLTIP_MODIFY",
+      "type": "REMOVE",
+      "index": 0
+    }
+  ]
+}
+```
+
+- `operation`: `TOOLTIP_MODIFY` (alias: `TOOLTIPMODIFY`)
+- `type` (optional): enum from `ItemTooltipModifySetter.Type`; defaults to `INSERT`
+- `index` (optional): integer index, defaults to `0`
+- `components` or `tooltip`:
+  - required for non-`REMOVE` types
+  - optional for `REMOVE`
+  - accepts a single string, or an array of strings/JSON text component objects
+
 ## Item type (`attributesetter/item_type`)
 
 These entries modify item-level data (durability, max stack, food).

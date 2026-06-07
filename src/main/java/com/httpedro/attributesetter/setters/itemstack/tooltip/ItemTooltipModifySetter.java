@@ -4,7 +4,7 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 
 public class ItemTooltipModifySetter extends ItemStackTooltipSetter {
-    enum Type {
+    public enum Type {
         INSERT,
         REPLACE,
         REMOVE

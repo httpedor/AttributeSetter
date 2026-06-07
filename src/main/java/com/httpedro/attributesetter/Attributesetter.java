@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+import com.httpedro.attributesetter.network.NetworkHandler;
+import com.httpedro.attributesetter.network.SyncTargetTypesPayload;
 import com.httpedro.attributesetter.selectors.entity.IsEnemySelector;
 import com.httpedro.attributesetter.selectors.entity.IsMobCategorySelector;
 import com.httpedro.attributesetter.setters.item.ItemMaxStackSetter;
@@ -14,6 +16,8 @@ import com.httpedro.attributesetter.targettypes.interfaces.IDataComponentHolderT
 import com.httpedro.attributesetter.targettypes.interfaces.IIdentifiableTargetType;
 import com.httpedro.attributesetter.targettypes.interfaces.INBTSerializableTargetType;
 import com.httpedro.attributesetter.targettypes.interfaces.IRegistryAssociatedTargetType;
+import net.minecraft.client.Minecraft;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobCategory;
 import org.slf4j.Logger;
 
@@ -34,6 +38,9 @@ import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeBas
 import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeConversionSetter;
 import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeDependencySetter;
 import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeModifierSetter;
+import com.httpedro.attributesetter.setters.itemstack.tooltip.ItemTooltipAddSetter;
+import com.httpedro.attributesetter.setters.itemstack.tooltip.ItemTooltipModifySetter;
+import net.minecraft.network.chat.Component;
 import com.httpedro.attributesetter.setters.item.ItemDurabilitySetter;
 import com.httpedro.attributesetter.setters.item.food.FoodNutritionMultiplierSetter;
 import com.httpedro.attributesetter.setters.item.food.FoodNutritionSetter;
@@ -69,6 +76,8 @@ import net.neoforged.neoforge.event.AddReloadListenerEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
 import net.neoforged.neoforge.event.entity.living.MobSpawnEvent.PositionCheck;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
 @Mod(Attributesetter.MODID)
@@ -76,13 +85,15 @@ public class Attributesetter {
     public static boolean isApothic = false;
 
     // Define mod id in a common place for everything to reference
-    private static final DataReloader dr = new DataReloader();
+    public static final DataReloader dr = new DataReloader();
     public static RegistryAccess ra = null;
     public static final String MODID = "attributesetter";
     // Directly reference a slf4j logger
     public static final Logger LOGGER = LogUtils.getLogger();
+
     public Attributesetter(IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(NetworkHandler::register);
 
         NeoForge.EVENT_BUS.register(this);
         if (FMLEnvironment.dist.isClient())
@@ -144,6 +155,12 @@ public class Attributesetter {
         if (!(entity instanceof LivingEntity le))
             return;
         processEntity(le);
+
+        // Sync TargetType data to players when they join the server
+        if (entity instanceof ServerPlayer player) {
+            SyncTargetTypesPayload payload = new SyncTargetTypesPayload(new java.util.HashMap<>(dr.entries));
+            player.connection.send(payload);
+        }
     }
 
     @SubscribeEvent
@@ -710,6 +727,100 @@ public class Attributesetter {
             }
 
             return new ItemAttributeDependencySetter(attr.get(), dependency.get(), multiplier, id.toString());
+        });
+
+        // Tooltip: add simple lines
+        TargetTypes.ITEMSTACK.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var op = opElement.getAsString();
+            if (!op.equalsIgnoreCase("tooltip_add") && !op.equalsIgnoreCase("tooltipadd") && !op.equalsIgnoreCase("tooltip"))
+                return null;
+
+            var tooltipElement = obj.get("tooltip");
+            if (tooltipElement == null)
+                tooltipElement = obj.get("components");
+            if (tooltipElement == null)
+                return null;
+
+            java.util.List<Component> comps = new java.util.ArrayList<>();
+            if (tooltipElement.isJsonArray())
+            {
+                for (var elem : tooltipElement.getAsJsonArray())
+                {
+                    try {
+                        if (elem.isJsonPrimitive())
+                            comps.add(Component.literal(elem.getAsString()));
+                        else
+                            comps.add(Component.Serializer.fromJson(elem.toString(), ra));
+                    } catch (Exception ex) {
+                        Attributesetter.LOGGER.error("Failed to parse tooltip component in entry {}", id, ex);
+                    }
+                }
+            }
+            else if (tooltipElement.isJsonPrimitive())
+            {
+                comps.add(Component.literal(tooltipElement.getAsString()));
+            }
+            if (comps.isEmpty())
+                return null;
+
+            return new ItemTooltipAddSetter(comps.toArray(new Component[0]));
+        });
+
+        // Tooltip: modify (insert/replace/remove)
+        TargetTypes.ITEMSTACK.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var op = opElement.getAsString();
+            if (!op.equalsIgnoreCase("tooltip_modify") && !op.equalsIgnoreCase("tooltipmodify") && !op.equalsIgnoreCase("tooltip_modify"))
+                return null;
+
+            int index = obj.has("index") ? obj.get("index").getAsInt() : 0;
+            var typeElement = obj.get("type");
+            ItemTooltipModifySetter.Type type = ItemTooltipModifySetter.Type.INSERT;
+            if (typeElement != null)
+            {
+                try {
+                    type = ItemTooltipModifySetter.Type.valueOf(typeElement.getAsString().toUpperCase());
+                } catch (Exception ex) {
+                    Attributesetter.LOGGER.error("Invalid tooltip modify type {} in entry {}", typeElement.getAsString(), id);
+                    return null;
+                }
+            }
+
+            var componentsElement = obj.get("components");
+            if (componentsElement == null)
+                componentsElement = obj.get("tooltip");
+            List<Component> comps = new ArrayList<>();
+            if (componentsElement != null)
+            {
+                if (componentsElement.isJsonArray())
+                {
+                    for (var elem : componentsElement.getAsJsonArray())
+                    {
+                        try {
+                            if (elem.isJsonPrimitive())
+                                comps.add(Component.literal(elem.getAsString()));
+                            else
+                                comps.add(Component.Serializer.fromJson(elem.toString(), ra));
+                        } catch (Exception ex) {
+                            Attributesetter.LOGGER.error("Failed to parse tooltip component in entry {}", id, ex);
+                        }
+                    }
+                }
+                else if (componentsElement.isJsonPrimitive())
+                {
+                    comps.add(Component.literal(componentsElement.getAsString()));
+                }
+            }
+
+            if (type != ItemTooltipModifySetter.Type.REMOVE && comps.isEmpty())
+                return null;
+
+            return new ItemTooltipModifySetter(index, type, comps.toArray(new Component[0]));
         });
 
         // Attribute Injection
