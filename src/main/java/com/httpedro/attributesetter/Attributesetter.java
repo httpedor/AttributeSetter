@@ -1,67 +1,78 @@
 package com.httpedro.attributesetter;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
+
+import com.httpedro.attributesetter.selectors.entity.IsEnemySelector;
+import com.httpedro.attributesetter.selectors.entity.IsMobCategorySelector;
+import com.httpedro.attributesetter.setters.item.ItemMaxStackSetter;
+import com.httpedro.attributesetter.setters.attribute.AttributeModifiersInjectionSetter;
+import com.httpedro.attributesetter.targettypes.*;
+import com.httpedro.attributesetter.targettypes.interfaces.IDataComponentHolderTargetType;
+import com.httpedro.attributesetter.targettypes.interfaces.IIdentifiableTargetType;
+import com.httpedro.attributesetter.targettypes.interfaces.INBTSerializableTargetType;
+import com.httpedro.attributesetter.targettypes.interfaces.IRegistryAssociatedTargetType;
+import net.minecraft.world.entity.MobCategory;
+import org.slf4j.Logger;
+
 import com.google.gson.JsonElement;
-import com.httpedro.attributesetter.compat.CuriosCompat;
+import com.httpedro.attributesetter.api.AttributeSetterAPI;
+import com.httpedro.attributesetter.compat.curios.CuriosCompat;
 import com.httpedro.attributesetter.selectors.ASSelector;
 import com.httpedro.attributesetter.selectors.CompositeASSelector;
-import com.httpedro.attributesetter.selectors.entity.IdEntitySelector;
-import com.httpedro.attributesetter.selectors.entity.NbtEntitySelector;
-import com.httpedro.attributesetter.selectors.entity.RegexEntitySelector;
-import com.httpedro.attributesetter.selectors.entity.TagEntitySelector;
-import com.httpedro.attributesetter.selectors.item.IdItemSelector;
-import com.httpedro.attributesetter.selectors.item.NbtItemSelector;
-import com.httpedro.attributesetter.selectors.item.RegexItemSelector;
-import com.httpedro.attributesetter.selectors.item.TagItemSelector;
+import com.httpedro.attributesetter.selectors.IdSelector;
+import com.httpedro.attributesetter.selectors.NbtSelector;
+import com.httpedro.attributesetter.selectors.RegexSelector;
+import com.httpedro.attributesetter.selectors.TagSelector;
+import com.httpedro.attributesetter.selectors.HasComponentSelector;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeModifierSetter;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeSetter;
-import com.httpedro.attributesetter.setters.item.ItemAttributeBaseSetter;
-import com.httpedro.attributesetter.setters.item.ItemAttributeConversionSetter;
-import com.httpedro.attributesetter.setters.item.ItemAttributeDependencySetter;
-import com.httpedro.attributesetter.setters.item.ItemAttributeModifierSetter;
-import com.httpedro.attributesetter.setters.item.ItemAttributeSetter;
+import com.httpedro.attributesetter.setters.entity.CreeperExplosionPowerSetter;
+import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeBaseSetter;
+import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeConversionSetter;
+import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeDependencySetter;
+import com.httpedro.attributesetter.setters.itemstack.attribute.ItemAttributeModifierSetter;
 import com.httpedro.attributesetter.setters.item.ItemDurabilitySetter;
+import com.httpedro.attributesetter.setters.item.food.FoodNutritionMultiplierSetter;
+import com.httpedro.attributesetter.setters.item.food.FoodNutritionSetter;
+import com.mojang.brigadier.StringReader;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 
-import net.minecraft.ChatFormatting;
+import net.minecraft.commands.arguments.item.ItemParser;
+import net.minecraft.commands.arguments.item.ItemParser.ItemResult;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
-import net.minecraft.world.item.*;
+import net.minecraft.world.food.FoodProperties;
+import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.AddReloadListenerEvent;
-import net.neoforged.neoforge.event.ItemAttributeModifierEvent;
-import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
-import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
-import net.neoforged.neoforge.event.entity.living.MobSpawnEvent;
-import net.neoforged.neoforge.event.entity.living.MobSpawnEvent.PositionCheck;
-import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
-
-import org.slf4j.Logger;
-
-import java.util.ArrayList;
-import java.util.UUID;
-import java.util.regex.Pattern;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
+import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
+import net.neoforged.neoforge.event.entity.living.MobSpawnEvent.PositionCheck;
 
 // The value here should match an entry in the META-INF/neoforge.mods.toml file
 @Mod(Attributesetter.MODID)
 public class Attributesetter {
-    public static final UUID DEFAULT_UUID = UUID.fromString("21ef99f1-c77a-42cf-ba8f-a59cf69ce7a6");
-    public static final UUID BASE_UUID = UUID.fromString("b697bf19-6a3a-4baf-89ce-5d4a3422a3a4");
     public static boolean isApothic = false;
 
     // Define mod id in a common place for everything to reference
@@ -73,17 +84,14 @@ public class Attributesetter {
     public Attributesetter(IEventBus modEventBus) {
         modEventBus.addListener(this::commonSetup);
 
-        // Register ourselves for server and other game events we are interested in
         NeoForge.EVENT_BUS.register(this);
         if (FMLEnvironment.dist.isClient())
-        {
-            NeoForge.EVENT_BUS.addListener(ClientModEvents::tooltipEvent);
-        }
+            NeoForge.EVENT_BUS.addListener(AttributeSetterClient::mergeTooltips);
+
         if (ModList.get().isLoaded("curios"))
         {
             var compat = new CuriosCompat();
             compat.bootstrap();
-            NeoForge.EVENT_BUS.register(compat);
         }
     }
 
@@ -101,26 +109,9 @@ public class Attributesetter {
         e.addListener(dr);
     }
 
-    @SubscribeEvent
-    public void onItemAttribute(ItemAttributeModifierEvent e)
+    public static void processEntity(LivingEntity le)
     {
-        var stack = e.getItemStack();
-
-        for (var entry : AttributeSetterAPI.getEntriesFor(stack))
-        {
-            if (entry instanceof ItemAttributeSetter ias)
-            {
-                ias.apply(e);
-            }
-            else if (entry.shouldApply(stack))
-                entry.apply(stack);
-        }
-
-    }
-
-    private void processEntity(LivingEntity le)
-    {
-        final var entries = AttributeSetterAPI.getEntriesFor(le);
+        final var entries = TargetTypes.ENTITY.getGenericEntriesFor(le);
         if (le.getType() == EntityType.PLAYER)
         {
             for (var entry : entries)
@@ -175,227 +166,187 @@ public class Attributesetter {
     }
 
     //TODO: Selectors that get re-checkd on certain events (like NBT changes)
-    private void setupSelectors()
+    @SuppressWarnings("unchecked")
+	private void setupSelectors()
     {
-        // ID selectors
-        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
-            String namespace = fileName;
-            if (str.contains(":"))
-            {
-                var parts = str.split(":");
-                namespace = parts[0];
-                str = parts[1];
-            }
-            var res = ResourceLocation.fromNamespaceAndPath(namespace, str);
-            return new IdEntitySelector(res);
-        });
-        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
-            String namespace = fileName;
-            if (str.contains(":"))
-            {
-                var parts = str.split(":");
-                namespace = parts[0];
-                str = parts[1];
-            }
-            var res = ResourceLocation.fromNamespaceAndPath(namespace, str);
-            return new IdItemSelector(res);
-        });
 
-        // Composite selectors
-        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
-            if (str.startsWith("!"))
+        Map<String, DataComponentType<?>> components = Map.of(
+                "isFood", DataComponents.FOOD,
+                "hasDurability", DataComponents.MAX_DAMAGE,
+                "isEnchanted", DataComponents.ENCHANTMENTS,
+                "isPotion", DataComponents.POTION_CONTENTS
+        );
+        for (var targetType : AttributeSetterAPI.getAllTargetTypes())
+        {
+            // ID Selector
+            if (targetType instanceof IIdentifiableTargetType itt)
             {
-                var actualStr = str.substring(1).trim();
-                var subSelector = AttributeSetterAPI.parseItemSelector(actualStr, fileName);
-                if (subSelector != null)
-                {
-                    subSelector.inverted = true;
-                    return subSelector;
-                }
-            }
-            return null;
-        });
-        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
-            if (str.startsWith("!"))
-            {
-                var actualStr = str.substring(1).trim();
-                var subSelector = AttributeSetterAPI.parseEntitySelector(actualStr, fileName);
-                if (subSelector != null)
-                {
-                    subSelector.inverted = true;
-                    return subSelector;
-                }
-            }
-            return null;
-        });
-        AttributeSetterAPI.registerEntitySelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
-            CompositeASSelector.Mode mode;
-            String delimiter;
-            if (str.contains("||"))
-            {
-                mode = CompositeASSelector.Mode.OR;
-                delimiter = "\\|\\|";
-            }
-            else if (str.contains("&&"))
-            {
-                mode = CompositeASSelector.Mode.AND;
-                delimiter = "&&";
-            }
-            else
-                return null;
-
-            var parts = str.split(delimiter);
-            var selectors = new ArrayList<ASSelector<LivingEntity>>();
-            for (var part : parts)
-            {
-                var sel = AttributeSetterAPI.parseEntitySelector(part.trim(), fileName);
-                if (sel != null)
-                    selectors.add(sel);
-            }
-            if (selectors.size() > 0)
-                return new CompositeASSelector<LivingEntity>(selectors, mode);
-
-            return null;
-        });
-        AttributeSetterAPI.registerItemSelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
-            CompositeASSelector.Mode mode;
-            String delimiter;
-            if (str.contains("||"))
-            {
-                mode = CompositeASSelector.Mode.OR;
-                delimiter = "||";
-            }
-            else if (str.contains("&&"))
-            {
-                mode = CompositeASSelector.Mode.AND;
-                delimiter = "&&";
-            }
-            else
-                return null;
-
-            var parts = str.split(Pattern.quote(delimiter));
-            var selectors = new ArrayList<ASSelector<ItemStack>>();
-            for (var part : parts)
-            {
-                var sel = AttributeSetterAPI.parseItemSelector(part.trim(), fileName);
-                if (sel != null)
-                    selectors.add(sel);
-            }
-            if (selectors.size() > 0)
-                return new CompositeASSelector<ItemStack>(selectors, mode);
-
-            return null;
-        });
-
-        // Tag selectors
-        AttributeSetterAPI.registerEntitySelectorBuilder(50, (str, fileName) -> {
-            if (str.startsWith("#"))
-            {
-                var tag = str.substring(1);
-                var tagRes = ResourceLocation.parse(tag);
-                return new TagEntitySelector(tagRes);
-            }
-            return null;
-        });
-        AttributeSetterAPI.registerItemSelectorBuilder(50, (str, fileName) -> {
-            if (str.startsWith("#"))
-            {
-                var tag = str.substring(1);
-                var tagRes = ResourceLocation.parse(tag);
-                return new TagItemSelector(tagRes);
-            }
-            return null;
-        });
-
-        // Nbt selectors
-        AttributeSetterAPI.registerEntitySelectorBuilder(100, (str, fileName) -> {
-            var nbtStartIndex = str.indexOf('{');
-            var nbtEndIndex = str.lastIndexOf('}');
-            if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
-            {
-                String beforePart = str.substring(0, nbtStartIndex).trim();
-                String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
-                ASSelector<LivingEntity> beforeSelector;
-                if (beforePart.isEmpty())
-                    beforeSelector = null;
-                else
-                    beforeSelector = AttributeSetterAPI.parseEntitySelector(beforePart, fileName);
-                if (beforeSelector == null && !beforePart.isEmpty())
-                    return null;
-                try {
-                    if (beforeSelector != null)
+                targetType.registerSelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
+                    String namespace = fileName;
+                    if (str.contains(":"))
                     {
-                        return new CompositeASSelector<>(new ASSelector[] {
-                                beforeSelector,
-                                new NbtEntitySelector(nbtPart)
-                        }, CompositeASSelector.Mode.AND);
+                        var parts = str.split(":");
+                        namespace = parts[0];
+                        str = parts[1];
                     }
-                    else
-                        return new NbtEntitySelector(nbtPart);
-                } catch (Exception ex)
-                {
-                    Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
-                    return null;
-                }
-            }
-            return null;
-        });
-        AttributeSetterAPI.registerItemSelectorBuilder(100, (str, fileName) -> {
-            var nbtStartIndex = str.indexOf('{');
-            var nbtEndIndex = str.lastIndexOf('}');
-            if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
-            {
-                String beforePart = str.substring(0, nbtStartIndex).trim();
-                String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
-                ASSelector<ItemStack> beforeSelector;
-                if (beforePart.isEmpty())
-                    beforeSelector = null;
-                else
-                    beforeSelector = AttributeSetterAPI.parseItemSelector(beforePart, fileName);
-                if (beforeSelector == null && !beforePart.isEmpty())
-                    return null;
-                try {
-                    if (beforeSelector != null)
+                    var res = ResourceLocation.fromNamespaceAndPath(namespace, str);
+                    return new IdSelector(res, itt::getId);
+                });
+                // Regex Selector
+                targetType.registerSelectorBuilder(99, (str, fileName) -> {
+                    var prefix = "regex:";
+                    if (str.contains(prefix))
                     {
-                        return new CompositeASSelector<>(new ASSelector[] {
-                                beforeSelector,
-                                new NbtItemSelector(nbtPart)
-                        }, CompositeASSelector.Mode.AND);
+                        var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
+                        return new RegexSelector(regex, (v) -> itt.getId(v).toString());
                     }
-                    else
-                        return new NbtItemSelector(nbtPart);
-                } catch (Exception ex)
-                {
-                    Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
                     return null;
+                });
+            }
+            // Inverted selector
+            targetType.registerSelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
+                if (str.startsWith("!"))
+                {
+                    var actualStr = str.substring(1).trim();
+                    var subSelector = targetType.parseSelector(actualStr, fileName);
+                    if (subSelector != null)
+                    {
+                        subSelector.inverted = true;
+                        return (ASSelector)subSelector;
+                    }
+                }
+                return null;
+            });
+            // Composite Selector
+            targetType.registerSelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
+                CompositeASSelector.Mode mode;
+                String delimiter;
+                if (str.contains("||"))
+                {
+                    mode = CompositeASSelector.Mode.OR;
+                    delimiter = "\\|\\|";
+                }
+                else if (str.contains("&&"))
+                {
+                    mode = CompositeASSelector.Mode.AND;
+                    delimiter = "&&";
+                }
+                else
+                    return null;
+
+                var parts = str.split(delimiter);
+                var selectors = new ArrayList<ASSelector<?>>();
+                for (var part : parts)
+                {
+                    var sel = targetType.parseSelector(part.trim(), fileName);
+                    if (sel != null)
+                        selectors.add(sel);
+                }
+                if (selectors.size() > 0)
+                    return new CompositeASSelector(selectors, mode);
+
+                return null;
+            });
+            if (targetType instanceof RegistryTargetType rtt)
+            {
+                targetType.registerSelectorBuilder(50, (str, fileName) -> {
+                    if (str.startsWith("#"))
+                    {
+                        var tag = str.substring(1);
+                        var tagRes = ResourceLocation.parse(tag);
+                        return new TagSelector<>(tagRes, rtt.getRegistry(), rtt::getSingleton);
+                    }
+                    return null;
+                });
+            }
+            else if (targetType instanceof IRegistryAssociatedTargetType iratt && targetType instanceof SingletonTargetType<?>)
+            {
+                targetType.registerSelectorBuilder(50, (str, fileName) -> {
+                    if (str.startsWith("#"))
+                    {
+                        var tag = str.substring(1);
+                        var tagRes = ResourceLocation.parse(tag);
+                        return new TagSelector<>(tagRes, iratt.getRegistry(), (v) -> v);
+                    }
+                    return null;
+                });
+            }
+            if (targetType instanceof INBTSerializableTargetType istt)
+            {
+                targetType.registerSelectorBuilder(100, (str, fileName) -> {
+                    var nbtStartIndex = str.indexOf('{');
+                    var nbtEndIndex = str.lastIndexOf('}');
+                    if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
+                    {
+                        String beforePart = str.substring(0, nbtStartIndex).trim();
+                        String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
+                        ASSelector<?> beforeSelector;
+                        if (beforePart.isEmpty())
+                            beforeSelector = null;
+                        else
+                            beforeSelector = targetType.parseSelector(beforePart, fileName);
+                        if (beforeSelector == null && !beforePart.isEmpty())
+                            return null;
+                        try {
+                            if (beforeSelector != null)
+                            {
+                                return new CompositeASSelector<>(new ASSelector[] {
+                                        beforeSelector,
+                                        new NbtSelector<>(nbtPart, istt.getSerializer())
+                                }, CompositeASSelector.Mode.AND);
+                            }
+                            else
+                                return new NbtSelector<>(nbtPart, istt.getSerializer());
+                        } catch (Exception ex)
+                        {
+                            Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
+                            return null;
+                        }
+                    }
+                    return null;
+                });
+            }
+            if (targetType instanceof IDataComponentHolderTargetType idchtt)
+            {
+                for (var entry : components.entrySet())
+                {
+
+                    final String compName = entry.getKey();
+                    final DataComponentType<?> compType = entry.getValue();
+                    targetType.registerSelectorBuilder(60, (str, fileName) -> {
+                        if (str.equals(compName))
+                            return new HasComponentSelector(compType, idchtt::getDataComponentMap);
+                        return null;
+                    });
                 }
             }
-            return null;
-        });
+        }
 
-        AttributeSetterAPI.registerEntitySelectorBuilder(99, (str, fileName) -> {
-            var prefix = "regex:";
-            if (str.contains(prefix))
-            {
-                var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
-                return new RegexEntitySelector(regex);
-            }
-            return null;
-        });
-        AttributeSetterAPI.registerItemSelectorBuilder(99, (str, fileName) -> {
-            var prefix = "regex:";
-            if (str.contains(prefix))
-            {
-                var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
-                return new RegexItemSelector(regex);
-            }
+        Map<String, MobCategory> mobCategoryMap = Map.of(
+                "isMonster", MobCategory.MONSTER,
+                "isCreature", MobCategory.CREATURE,
+                "isMisc", MobCategory.MISC,
+                "isWaterCreature", MobCategory.WATER_CREATURE
+        );
+        for (var entry : mobCategoryMap.entrySet())
+        {
+            TargetTypes.ENTITY.registerSelectorBuilder(50, (str, fileName) -> {
+                if (str.equals(entry.getKey()))
+                    return new IsMobCategorySelector(entry.getValue());
+                return null;
+            });
+        }
+
+        TargetTypes.ENTITY.registerSelectorBuilder(50, (str, fileName) -> {
+            if (str.equals("isEnemy"))
+                return new IsEnemySelector();
             return null;
         });
     }
     private void setupSetters()
     {
         // Simple attribute setters
-        AttributeSetterAPI.registerEntitySetterBuilder(0, (obj, id, selector) -> {
+        TargetTypes.ENTITY.registerSetterBuilder(0, (obj, id, selector) -> {
             var attrElement = obj.get("attribute");
             var valueElement = obj.get("value");
             var opElement = obj.get("operation");
@@ -448,11 +399,29 @@ public class Attributesetter {
             return null;
         });
 
-        // Item setters: split by operation
-        // - priority 1: durability/base (checked first)
-        // - priority 0: modifier (default)
+        // Creeper explosion power
+        TargetTypes.ENTITY.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var op = opElement.getAsString();
+            if (!op.equalsIgnoreCase("creeper_explosion_power") && !op.equalsIgnoreCase("explosion_power"))
+                return null;
 
-        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+            var powerElement = obj.get("power");
+            if (powerElement != null)
+                return new CreeperExplosionPowerSetter(powerElement.getAsInt());
+
+            var multiplierElement = obj.get("multiplier");
+            if (multiplierElement != null)
+                return new CreeperExplosionPowerSetter(multiplierElement.getAsFloat());
+
+            Attributesetter.LOGGER.error("Missing power or multiplier for creeper explosion power setter in entry {}", id);
+            return null;
+        });
+
+        // Durability
+        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("durability"))
                 return null;
@@ -462,7 +431,148 @@ public class Attributesetter {
             return new ItemDurabilitySetter(valueElement.getAsInt());
         });
 
-        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("durability"))
+                return null;
+            var valueElement = obj.get("value");
+            var multiplierElement = obj.get("multiplier");
+            if (valueElement != null)
+                return new ItemDurabilitySetter(valueElement.getAsInt());
+            if (multiplierElement != null)
+                return new ItemDurabilitySetter(multiplierElement.getAsFloat());
+            Attributesetter.LOGGER.error("Missing value or multiplier for durability setter in entry {}", id);
+            return null;
+        });
+
+        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("max_stack"))
+                return null;
+            var valueElement = obj.get("value");
+            var multiplierElement = obj.get("multiplier");
+            if (valueElement != null)
+                return new ItemMaxStackSetter(valueElement.getAsInt());
+            if (multiplierElement != null)
+                return new ItemMaxStackSetter(multiplierElement.getAsFloat());
+            Attributesetter.LOGGER.error("Missing value or multiplier for max stack size setter in entry {}", id);
+            return null;
+        });
+
+        // Food
+        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("food"))
+                return null;
+
+            if (obj.has("remove") && obj.get("remove").getAsBoolean())
+                return FoodNutritionSetter.remove();
+
+            int nutrition;
+            float saturation;
+            float eatSeconds = 1;
+            boolean canAlwaysEat = false;
+            ItemStack convertsTo = null;
+            List<FoodProperties.PossibleEffect> effects = new ArrayList<>();
+
+            var nutritionElement = obj.get("nutrition");
+            var saturationElement = obj.get("saturation");
+            var convertsToElement = obj.get("converts_to");
+            var effectsElement = obj.get("effects");
+            var eatSecondsElement = obj.get("eat_seconds");
+            var canAlwaysEatElement = obj.get("can_always_eat");
+            if (nutritionElement == null || saturationElement == null)
+            {
+                Attributesetter.LOGGER.error("Missing nutrition or saturation for food setter in entry {}", id);
+                return null;
+            }
+
+            nutrition = nutritionElement.getAsInt();
+            saturation = saturationElement.getAsFloat();
+            if (eatSecondsElement != null)
+                eatSeconds = eatSecondsElement.getAsFloat();
+            if (canAlwaysEatElement != null)
+                canAlwaysEat = canAlwaysEatElement.getAsBoolean();
+            if (convertsToElement != null)
+            {
+                ItemParser parser = new ItemParser(HolderLookup.Provider.create(Stream.of(BuiltInRegistries.REGISTRY.asLookup())));
+                ItemResult result = null;
+                try {
+                    result = parser.parse(new StringReader(convertsToElement.getAsString()));
+                } catch (CommandSyntaxException e) {
+                    Attributesetter.LOGGER.error("Failed to parse converts_to item for food setter in entry {}", id, e);
+                }
+                if (result != null)
+                    convertsTo = new ItemStack(result.item(), 1, result.components());
+                else
+                    Attributesetter.LOGGER.error("Failed to parse converts_to item for food setter in entry {}", id);
+            }
+            if (effectsElement != null && effectsElement.isJsonArray())
+            {
+                for (var effectElem : effectsElement.getAsJsonArray())
+                {
+                    if (effectElem.isJsonObject())
+                    {
+                        var effectObj = effectElem.getAsJsonObject();
+                        var effectTypeElem = effectObj.get("effect");
+                        var durationElem = effectObj.get("duration");
+                        var amplifierElem = effectObj.get("amplifier");
+                        var chanceElem = effectObj.get("chance");
+                        if (effectTypeElem != null && durationElem != null)
+                        {
+                            var effectTypeRes = ResourceLocation.parse(effectTypeElem.getAsString());
+                            var effectType = BuiltInRegistries.MOB_EFFECT.getHolder(effectTypeRes);
+                            if (effectType == null || effectType.isEmpty())
+                            {
+                                Attributesetter.LOGGER.error("Failed to find mob effect {} for food setter in entry {}", effectTypeRes, id);
+                                continue;
+                            }
+                            int duration = durationElem.getAsInt();
+                            int amplifier = amplifierElem != null ? amplifierElem.getAsInt() : 0;
+                            float chance = chanceElem != null ? chanceElem.getAsFloat() : 1.0f;
+                            var effect = new MobEffectInstance(effectType.get(), duration, amplifier);
+                            effects.add(new FoodProperties.PossibleEffect(() -> effect, chance));
+                        }
+                        else
+                            Attributesetter.LOGGER.error("Missing type or duration for food effect in entry {}", id);
+                    }
+                    else
+                        Attributesetter.LOGGER.error("Invalid effect entry in effects array for food setter in entry {}", id);
+                }
+            }
+
+            return new FoodNutritionSetter(nutrition, saturation, canAlwaysEat, eatSeconds, convertsTo, effects);
+        });
+
+        // Food Modify
+        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opEl = obj.get("operation");
+            if (opEl == null || !opEl.getAsString().equalsIgnoreCase("food_modify"))
+                return null;
+
+            var saturationElement = obj.get("saturation_multiplier");
+            var nutritionElement = obj.get("nutrition_multiplier");
+            var eatSecondsElement = obj.get("eat_seconds_mult");
+            var saturationOffElement = obj.get("saturation_offset");
+            var nutritionOffElement = obj.get("nutrition_offset");
+            var eatSecondsOffElement = obj.get("eat_seconds_offset");
+
+            float saturationMultiplier = saturationElement != null ? saturationElement.getAsFloat() : 1.0f;
+            float nutritionMultiplier = nutritionElement != null ? nutritionElement.getAsFloat() : 1.0f;
+            float eatSecondsMultiplier = eatSecondsElement != null ? eatSecondsElement.getAsFloat() : 1.0f;
+            float saturationOffset = saturationOffElement != null ? saturationOffElement.getAsInt() : 0;
+            int nutritionOffset = nutritionOffElement != null ? nutritionOffElement.getAsInt() : 0;
+            float eatSecondsOffset = eatSecondsOffElement != null ? eatSecondsOffElement.getAsFloat() : 0;
+
+            return new FoodNutritionMultiplierSetter(nutritionMultiplier, saturationMultiplier, eatSecondsMultiplier, nutritionOffset, saturationOffset, eatSecondsOffset);
+        });
+
+
+        // Item setters: split by operation
+        // - priority 1: base (checked first)
+        // - priority 0: modifier (default)
+        // Base
+        TargetTypes.ITEMSTACK.registerSetterBuilder(1, (obj, id, selector) -> {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("base"))
                 return null;
@@ -487,7 +597,8 @@ public class Attributesetter {
             return new ItemAttributeBaseSetter(attr.get(), value, slot, id);
         });
 
-        AttributeSetterAPI.registerItemSetterBuilder(0, (obj, id, selector) -> {
+        // Modifiers
+        TargetTypes.ITEMSTACK.registerSetterBuilder(0, (obj, id, selector) -> {
             var attrElement = obj.get("attribute");
             var valueElement = obj.get("value");
             var opElement = obj.get("operation");
@@ -552,7 +663,7 @@ public class Attributesetter {
         });
 
         // Conversion
-        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+        TargetTypes.ITEMSTACK.registerSetterBuilder(1, (obj, id, selector) -> {
             var attrElement = obj.get("attribute");
             var valueElement = obj.get("amount");
             var rateElement = obj.get("rate");
@@ -575,7 +686,7 @@ public class Attributesetter {
             return new ItemAttributeConversionSetter(fromAttr.get(), toAttr.get(), amountConverted, conversionRate, id.toString());
         });
         // Dependency
-        AttributeSetterAPI.registerItemSetterBuilder(1, (obj, id, selector) -> {
+        TargetTypes.ITEMSTACK.registerSetterBuilder(1, (obj, id, selector) -> {
             var attrElement = obj.get("attribute");
             var multiplierElement = obj.get("multiplier");
             var opElement = obj.get("operation");
@@ -600,21 +711,142 @@ public class Attributesetter {
 
             return new ItemAttributeDependencySetter(attr.get(), dependency.get(), multiplier, id.toString());
         });
+
+        // Attribute Injection
+        TargetTypes.ATTRIBUTE.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var opStr = opElement.getAsString();
+            if (!opStr.equalsIgnoreCase("inject") && !opStr.equalsIgnoreCase("injection") && !opStr.equalsIgnoreCase("attribute_injection"))
+                return null;
+
+            var sourceElement = obj.get("source");
+            if (sourceElement == null)
+            {
+                Attributesetter.LOGGER.error("Missing source for attribute injection in entry {}", id);
+                return null;
+            }
+
+            var source = ResourceLocation.parse(sourceElement.getAsString());
+            float multiplier = obj.has("multiplier") ? obj.get("multiplier").getAsFloat() : 1.0f;
+
+            AttributeModifiersInjectionSetter.InjectionType type = AttributeModifiersInjectionSetter.InjectionType.INJECT;
+            var typeElement = obj.get("type");
+            if (typeElement != null)
+            {
+                try
+                {
+                    type = AttributeModifiersInjectionSetter.InjectionType.valueOf(typeElement.getAsString().toUpperCase());
+                } catch (Exception ex)
+                {
+                    Attributesetter.LOGGER.error("Failed to parse injection type {} in entry {}", typeElement.getAsString(), id);
+                    return null;
+                }
+            }
+
+            List<AttributeModifier.Operation> operations = null;
+            var operationsElement = obj.get("operations");
+            if (operationsElement != null)
+            {
+                operations = new ArrayList<>();
+                if (operationsElement.isJsonArray())
+                {
+                    for (var opElem : operationsElement.getAsJsonArray())
+                    {
+                        if (!opElem.isJsonPrimitive())
+                            continue;
+                        AttributeModifier.Operation parsedOp = null;
+                        switch (opElem.getAsString().toUpperCase())
+                        {
+                            case "+":
+                            case "ADD":
+                            case "ADDITION":
+                                parsedOp = AttributeModifier.Operation.ADD_VALUE;
+                                break;
+                            case "PERCENT":
+                            case "%":
+                            case "MULTIPLY_BASE":
+                                parsedOp = AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
+                                break;
+                            case "*":
+                            case "X":
+                            case "MULTIPLY_TOTAL":
+                                parsedOp = AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
+                                break;
+                        }
+                        if (parsedOp == null)
+                        {
+                            try
+                            {
+                                parsedOp = AttributeModifier.Operation.valueOf(opElem.getAsString().toUpperCase());
+                            } catch (Exception ex)
+                            {
+                                Attributesetter.LOGGER.error("Failed to parse operation {} in entry {}", opElem.getAsString(), id);
+                                return null;
+                            }
+                        }
+                        operations.add(parsedOp);
+                    }
+                }
+                else if (operationsElement.isJsonPrimitive())
+                {
+                    AttributeModifier.Operation parsedOp = null;
+                    switch (operationsElement.getAsString().toUpperCase())
+                    {
+                        case "+":
+                        case "ADD":
+                        case "ADDITION":
+                            parsedOp = AttributeModifier.Operation.ADD_VALUE;
+                            break;
+                        case "PERCENT":
+                        case "%":
+                        case "MULTIPLY_BASE":
+                            parsedOp = AttributeModifier.Operation.ADD_MULTIPLIED_BASE;
+                            break;
+                        case "*":
+                        case "X":
+                        case "MULTIPLY_TOTAL":
+                            parsedOp = AttributeModifier.Operation.ADD_MULTIPLIED_TOTAL;
+                            break;
+                    }
+                    if (parsedOp == null)
+                    {
+                        try
+                        {
+                            parsedOp = AttributeModifier.Operation.valueOf(operationsElement.getAsString().toUpperCase());
+                        } catch (Exception ex)
+                        {
+                            Attributesetter.LOGGER.error("Failed to parse operation {} in entry {}", operationsElement.getAsString(), id);
+                            return null;
+                        }
+                    }
+                    operations.add(parsedOp);
+                }
+                if (operations.isEmpty())
+                {
+                    Attributesetter.LOGGER.error("No valid operations provided for attribute injection in entry {}", id);
+                    return null;
+                }
+            }
+
+            return new AttributeModifiersInjectionSetter(source, operations, type, multiplier);
+        });
     }
 
     private EquipmentSlot parseItemSlot(JsonElement slotElement, String id, ASSelector<ItemStack> selector)
     {
         if (slotElement == null)
         {
-            IdItemSelector idSelector;
-            if (selector instanceof IdItemSelector iis)
+            IdSelector<?> idSelector;
+            if (selector instanceof IdSelector<?> iis)
                 idSelector = iis;
-            else if (selector instanceof CompositeASSelector<ItemStack> cas)
+            else if (selector instanceof CompositeASSelector<?> cas)
             {
-                IdItemSelector found = null;
+                IdSelector<?> found = null;
                 for (var selObj : cas.selectors)
                 {
-                    if (selObj instanceof IdItemSelector iis2)
+                    if (selObj instanceof IdSelector<?> iis2)
                     {
                         found = iis2;
                         break;
@@ -644,157 +876,4 @@ public class Attributesetter {
     }
 
     // Client-only listeners are registered from the constructor when running on client.
-    public static class ClientModEvents {
-
-        @SubscribeEvent
-        public static void tooltipEvent(ItemTooltipEvent e)
-        {
-            /*if (isApothic)
-                return;
-            var original = new ArrayList<>(e.getToolTip());
-            try
-            {
-                var lines = e.getToolTip();
-                Map<String, Map<String, Double>> blueAttributes = new HashMap<>();
-                Map<String, Integer> slotIndexes = new HashMap<>();
-                Map<String, Double> greenAttributes = new HashMap<>();
-                String currentSlot = null;
-                int i = 0;
-                for (Iterator<Component> it = lines.iterator(); it.hasNext();)
-                {
-                    var line = it.next();
-                    var content = line.getContents();
-                    //Normal attr modifiers
-                    if (content instanceof TranslatableContents ttc)
-                    {
-                        String dmgAttrName = "attribute.name.generic.attack_damage";
-                        String spdAttrName = "attribute.name.generic.attack_speed";
-                        if (ttc.getKey().startsWith("item.modifiers"))
-                        {
-                            currentSlot = ttc.getKey().substring(ttc.getKey().lastIndexOf('.')+1);
-                            slotIndexes.put(currentSlot, i);
-                        }
-                        else if (ttc.getKey().startsWith("attribute.modifier.plus.0") && currentSlot != null)
-                        {
-                            if (!NumberUtils.isCreatable(((Component)ttc.getArgs()[0]).getString()))
-                            {
-                                i++;
-                                continue;
-                            }
-                            var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                            double value = Double.parseDouble(ttc.getArgs()[0].toString());
-                            if (greenAttributes.containsKey(attrName))
-                            {
-                                greenAttributes.put(attrName, greenAttributes.get(attrName) + value);
-                                it.remove();
-                            }
-                            else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
-                            {
-                                greenAttributes.put(attrName, value+1);
-                                it.remove();
-                            }
-                            else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
-                            {
-                                greenAttributes.put(attrName, 4 + value);
-                                it.remove();
-                            }
-                            else 
-                            {
-                                if (!blueAttributes.containsKey(currentSlot))
-                                    blueAttributes.put(currentSlot, new HashMap<>());
-
-                                blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) + value);
-                                it.remove();
-                            }
-                        }
-                        else if (ttc.getKey().startsWith("attribute.modifier.take.0") && currentSlot != null)
-                        {
-                            if (!NumberUtils.isCreatable(((Component)ttc.getArgs()[0]).getString()))
-                            {
-                                i++;
-                                continue;
-                            }
-                            var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                            double value = Double.parseDouble(((Component)ttc.getArgs()[0]).getString());
-                            if (greenAttributes.containsKey(attrName))
-                            {
-                                greenAttributes.put(attrName, greenAttributes.get(attrName) - value);
-                                it.remove();
-                            }
-                            else if (attrName.equals(dmgAttrName) && currentSlot.equals("mainhand"))
-                            {
-                                greenAttributes.put(attrName, -value+1);
-                                it.remove();
-                            }
-                            else if (attrName.equals(spdAttrName) && currentSlot.equals("mainhand"))
-                            {
-                                greenAttributes.put(attrName, 4 - value);
-                                it.remove();
-                            }
-                            else
-                            {
-                                if (!blueAttributes.containsKey(currentSlot))
-                                    blueAttributes.put(currentSlot, new HashMap<>());
-                                blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) - value);
-                                it.remove();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (var part : line.getSiblings())
-                        {
-                            if (part.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
-                            {
-                                if (!NumberUtils.isCreatable(((Component)ttc.getArgs()[0]).getString()))
-                                {
-                                    i++;
-                                    continue;
-                                }
-                                var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                                greenAttributes.put(attrName, Double.parseDouble(((Component)ttc.getArgs()[0]).getString()));
-                                it.remove();
-                            }
-                        }
-                    }
-                    i++;
-                }
-                for (var slotEntry : blueAttributes.entrySet())
-                {
-                    i = 0;
-                    var slot = slotEntry.getKey();
-                    for (var entry : slotEntry.getValue().entrySet())
-                    {
-                        var attrName = entry.getKey();
-                        var value = entry.getValue();
-                        if (value == 0)
-                        {
-                            i++;
-                            continue;
-                        }
-                        var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
-                        var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.take.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(Math.abs(value))).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
-                        lines.add(slotIndexes.get(slot) + i + 1, line);
-                        i++;
-                    }
-                }
-                i = 0;
-                for (var entry : greenAttributes.entrySet())
-                {
-                    var attrName = entry.getKey();
-                    var value = entry.getValue();
-                    var color = ChatFormatting.DARK_GREEN;
-                    var line = Component.literal(" ").append(Component.translatable("attribute.modifier.equals.0", Component.literal(ItemStack.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)));
-                    lines.add(slotIndexes.get("mainhand") + i + 1, line);
-                    i++;
-                }
-            } catch (Exception ex)
-            {
-                e.getToolTip().clear();
-                e.getToolTip().addAll(original);
-            }
-
-        */}
-    }
 }
-

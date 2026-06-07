@@ -2,10 +2,14 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.httpedro.attributesetter.mixin",
-  "compatibilityLevel": "JAVA_17",
+  "compatibilityLevel": "JAVA_21",
   "refmap": "attributesetter.refmap.json",
   "mixins": [
-    "LivingEntityMixin"
+    "AttributeInstanceMixin",
+    "AttributeSupplierMixin",
+    "CreeperMixin",
+    "LivingEntityMixin",
+    "RegistrationEventsMixin"
   ],
   "client": [
   ],

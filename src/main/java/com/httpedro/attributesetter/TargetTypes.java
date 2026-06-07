@@ -1,0 +1,21 @@
+package com.httpedro.attributesetter;
+
+import com.httpedro.attributesetter.api.AttributeSetterAPI;
+import com.httpedro.attributesetter.api.TargetType;
+import com.httpedro.attributesetter.targettypes.AttributeTargetType;
+import com.httpedro.attributesetter.targettypes.EntityTargetType;
+import com.httpedro.attributesetter.targettypes.ItemStackTargetType;
+
+import com.httpedro.attributesetter.targettypes.ItemTargetType;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+
+public class TargetTypes {
+    public static final TargetType<LivingEntity, EntityType<?>> ENTITY = AttributeSetterAPI.registerTargetType(new EntityTargetType());
+    public static final TargetType<ItemStack, Item> ITEMSTACK = AttributeSetterAPI.registerTargetType(new ItemStackTargetType());
+    public static final TargetType<Item, Item> ITEM = AttributeSetterAPI.registerTargetType(new ItemTargetType());
+    public static final TargetType<Attribute, Attribute> ATTRIBUTE = AttributeSetterAPI.registerTargetType(new AttributeTargetType());
+}

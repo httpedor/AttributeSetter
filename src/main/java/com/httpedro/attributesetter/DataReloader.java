@@ -4,11 +4,15 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.httpedro.attributesetter.api.AttributeSetterAPI;
 
+import com.httpedro.attributesetter.api.TrueDefaults;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
+import net.neoforged.neoforge.common.NeoForge;
 import oshi.util.tuples.Pair;
 
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +48,7 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         {
             int i = 0;
             var mods = entry.getValue().getAsJsonArray();
-            Pair<JsonObject, String>[] modsWithIds = new Pair[mods.size()];
+			Pair<JsonObject, String>[] modsWithIds = new Pair[mods.size()];
             for (var modElement : mods)
             {
                 var selector = entry.getKey();
@@ -57,22 +61,17 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                 modsWithIds[i] = new Pair<>(modJson, entryPath);
                 i++;
             }
-            switch (mode) {
-                case "entity":
-                    AttributeSetterAPI.registerEntityEntry(entry.getKey(), modsWithIds, fName);
-                    break;
-                case "item":
-                    AttributeSetterAPI.registerItemEntry(entry.getKey(), modsWithIds, fName);
-                    break;
-                default:
-                    break;
-            }
+            AttributeSetterAPI.getTargetType(mode).registerEntry(entry.getKey(), modsWithIds, fName);
             entryNum++;
         }
+
     }
 
     @Override
     protected void apply(Map<ResourceLocation, JsonElement> resourceLocationJsonElementMap, @NotNull ResourceManager resourceManager, @NotNull ProfilerFiller profilerFiller) {
+        if (!TrueDefaults.isPopulated())
+            TrueDefaults.populate();
+
         entries.clear();
         AttributeSetterAPI.clearAll();
 
@@ -80,6 +79,20 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         for (Map.Entry<ResourceLocation, JsonElement> fileEntry : resourceLocationJsonElementMap.entrySet()) {
             addEntry(fileEntry.getKey(), fileEntry.getValue());
         }
+
+        for (var item : BuiltInRegistries.ITEM)
+        {
+            for (var entry : TargetTypes.ITEM.getGenericEntriesFor(item))
+            {
+                entry.apply(item);
+            }
+        }
+        for (var attribute : BuiltInRegistries.ATTRIBUTE)
+        {
+            for (var entry : TargetTypes.ATTRIBUTE.getGenericEntriesFor(attribute))
+            {
+                entry.apply(attribute);
+            }
+        }
     }
 }
-

@@ -17,6 +17,7 @@ public class CompositeASSelector<T> extends ASSelector<T> {
     public CompositeASSelector(ASSelector<T>[] selectors) {
         this.selectors = selectors;
     }
+    @SuppressWarnings("unchecked")
     public CompositeASSelector(Collection<ASSelector<T>> selectors, Mode mode) {
         this.selectors = selectors.toArray(new ASSelector[0]);
         this.mode = mode;
@@ -51,6 +52,13 @@ public class CompositeASSelector<T> extends ASSelector<T> {
         }
         return biggestPrio;
     }
-    
-}
 
+    @Override
+    public boolean canCache() {
+        for (var selector : selectors) {
+            if (!selector.canCache())
+                return false;
+        }
+        return true;
+    }
+}
