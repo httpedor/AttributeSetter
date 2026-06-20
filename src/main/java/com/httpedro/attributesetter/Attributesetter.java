@@ -92,6 +92,7 @@ public class Attributesetter {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public Attributesetter(IEventBus modEventBus) {
+        TargetTypes.bootstrap();
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(NetworkHandler::register);
 

@@ -95,7 +95,6 @@ dependencies {
     localRuntime "curse.maven:playeranimator-658587:7389814"
     localRuntime "curse.maven:irons-spells-n-spellbooks-855414:7907341"
     localRuntime "curse.maven:jei-238222:7420587"*/
-    runtimeOnly "maven.modrinth:neo-origins:v2.0.36+1.21.1"
 
     //annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }

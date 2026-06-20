@@ -51,7 +51,8 @@ public abstract class AttributeInstanceMixin implements EntityAttributeInstance 
 
         modifiers.addAll(AttributeInjector.getInjectionsFor(attrId, op, entity));
         for (var entry : ((ASLivingEntity)entity).as$getInjections(op))
-            modifiers.add(entry.modifier);
+            if (entry.attribute.unwrapKey().get().location().equals(attrId))
+                modifiers.add(entry.modifier);
         cir.setReturnValue(modifiers);
     }
 

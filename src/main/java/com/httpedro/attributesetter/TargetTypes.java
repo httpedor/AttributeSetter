@@ -18,4 +18,5 @@ public class TargetTypes {
     public static final TargetType<ItemStack, Item> ITEMSTACK = AttributeSetterAPI.registerTargetType(new ItemStackTargetType());
     public static final TargetType<Item, Item> ITEM = AttributeSetterAPI.registerTargetType(new ItemTargetType());
     public static final TargetType<Attribute, Attribute> ATTRIBUTE = AttributeSetterAPI.registerTargetType(new AttributeTargetType());
+    public static void bootstrap(){}
 }

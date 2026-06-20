@@ -30,6 +30,7 @@ public class TemporaryAttributeInjection {
         copy.attribute = this.attribute;
         copy.modifier = this.modifier;
         copy.endTick = this.endTick;
+        copy.duration = this.duration;
         return copy;
     }
 

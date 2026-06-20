@@ -81,7 +81,7 @@ public abstract class LivingEntityMixin extends Entity implements ASLivingEntity
         {
             if (tick >= injection.endTick)
             {
-                as$temporaryInjections.get(injection.modifier.operation()).remove(injection.attribute.unwrapKey().get().location());
+                as$temporaryInjections.get(injection.modifier.operation()).remove(injection.modifier.id());
                 var attr = getAttribute(injection.attribute);
                 if (attr != null)
                     ((EntityAttributeInstance)attr).publicSetDirty();
@@ -115,7 +115,7 @@ public abstract class LivingEntityMixin extends Entity implements ASLivingEntity
 
     @Override
     public void as$addInjection(TemporaryAttributeInjection injection) {
-        as$temporaryInjections.computeIfAbsent(injection.modifier.operation(), op -> new HashMap<>()).put(injection.attribute.unwrapKey().get().location(), injection);
+        as$temporaryInjections.computeIfAbsent(injection.modifier.operation(), op -> new HashMap<>()).put(injection.modifier.id(), injection);
         var attr = getAttribute(injection.attribute);
         if (attr != null)
             ((EntityAttributeInstance)attr).publicSetDirty();

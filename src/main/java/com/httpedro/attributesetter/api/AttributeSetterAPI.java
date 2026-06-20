@@ -9,9 +9,10 @@ import org.slf4j.LoggerFactory;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class AttributeSetterAPI {
-    private static final Map<String, TargetType<?, ?>> ALL = new HashMap<>();
+    private static final Map<String, TargetType<?, ?>> ALL = new ConcurrentHashMap<>();
     private static final Logger log = LoggerFactory.getLogger(AttributeSetterAPI.class);
 
     public static Collection<TargetType<?, ?>> getAllTargetTypes() {
