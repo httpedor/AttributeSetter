@@ -22,9 +22,14 @@ public class TagItemSelector extends ItemSelector {
     protected boolean testImpl(ItemStack obj) {
         return obj.is(tag);
     }
-    
+
     @Override
     public float getSpecificity() {
         return 0;
+    }
+
+    @Override
+    public boolean canCache() {
+        return true;
     }
 }

@@ -51,5 +51,14 @@ public class CompositeASSelector<T> extends ASSelector<T> {
         }
         return biggestPrio;
     }
-    
+
+    @Override
+    public boolean canCache() {
+        for (var selector : selectors) {
+            if (!selector.canCache())
+                return false;
+        }
+        return true;
+    }
+
 }

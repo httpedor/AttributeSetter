@@ -22,9 +22,19 @@ public class TagEntitySelector extends EntitySelector {
     protected boolean testImpl(LivingEntity obj) {
         return obj.getType().is(tag);
     }
-    
+
+    @Override
+    protected Boolean testTypeImpl(EntityType<?> type) {
+        return type.is(tag);
+    }
+
     @Override
     public float getSpecificity() {
         return 0;
+    }
+
+    @Override
+    public boolean canCache() {
+        return true;
     }
 }

@@ -53,6 +53,9 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
                 case "item":
                     AttributeSetterAPI.registerItemEntry(entry.getKey(), modsWithIds, fName);
                     break;
+                case "attribute":
+                    AttributeSetterAPI.registerAttributeEntry(entry.getKey(), modsWithIds, fName);
+                    break;
                 default:
                     break;
             }
@@ -68,5 +71,6 @@ public class DataReloader extends SimpleJsonResourceReloadListener {
         for (Map.Entry<ResourceLocation, JsonElement> fileEntry : resourceLocationJsonElementMap.entrySet()) {
             addEntry(fileEntry.getKey(), fileEntry.getValue());
         }
+        AttributeSetterAPI.applyGlobalItemSetters();
     }
 }

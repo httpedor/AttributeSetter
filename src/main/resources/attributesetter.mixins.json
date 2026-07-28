@@ -2,10 +2,17 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.httpedro.attributesetter.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_17",
   "refmap": "attributesetter.refmap.json",
   "mixins": [
-    "LivingEntityMixin"
+    "AbstractVillagerMixin",
+    "AttributeInstanceMixin",
+    "AttributeSupplierMixin",
+    "CreativeModeTabMixin",
+    "CreeperMixin",
+    "ItemMixin",
+    "LivingEntityMixin",
+    "LootTableMixin"
   ],
   "client": [
   ],
