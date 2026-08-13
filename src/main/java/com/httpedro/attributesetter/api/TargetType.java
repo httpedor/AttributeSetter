@@ -255,6 +255,18 @@ public abstract class TargetType<T, TCache>
         return result;
     }
 
+    /**
+     * Every non-event entry currently registered, cacheable or not. Meant for reload-time passes that need to look
+     * at the entries themselves (and their selectors) rather than at what matches a given object.
+     */
+    public List<Entry<T>> getAllEntries()
+    {
+        List<Entry<T>> all = new ArrayList<>(cacheableEntries.size() + entries.size());
+        all.addAll(cacheableEntries);
+        all.addAll(entries);
+        return all;
+    }
+
     public List<ASSetter<T>> getGenericEntriesFor(T object)
     {
         List<ASSetter<T>> result = new ArrayList<>();

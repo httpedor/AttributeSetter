@@ -10,6 +10,19 @@ import com.httpedro.attributesetter.network.SyncTargetTypesPayload;
 import com.httpedro.attributesetter.selectors.entity.IsEnemySelector;
 import com.httpedro.attributesetter.selectors.entity.IsMobCategorySelector;
 import com.httpedro.attributesetter.setters.item.ItemMaxStackSetter;
+import com.httpedro.attributesetter.setters.item.ItemRemoveSetter;
+import com.httpedro.attributesetter.setters.itemstack.ItemStackRemoveSetter;
+import com.httpedro.attributesetter.setters.entity.EntityRemoveSetter;
+import com.httpedro.attributesetter.setters.block.BlockExplosionResistanceSetter;
+import com.httpedro.attributesetter.setters.block.BlockHardnessSetter;
+import com.httpedro.attributesetter.setters.block.BlockMiningSpeedSetter;
+import com.httpedro.attributesetter.setters.block.BlockRemoveSetter;
+import com.httpedro.attributesetter.setters.block.BlockReplaceSetter;
+import com.httpedro.attributesetter.api.RemovalRegistry;
+import com.httpedro.attributesetter.api.UniqueRegistry;
+import com.httpedro.attributesetter.setters.item.ItemUniqueSetter;
+import com.httpedro.attributesetter.setters.itemstack.ItemStackUniqueSetter;
+import com.httpedro.attributesetter.setters.entity.EntityUniqueSetter;
 import com.httpedro.attributesetter.setters.attribute.AttributeModifiersInjectionSetter;
 import com.httpedro.attributesetter.targettypes.*;
 import com.httpedro.attributesetter.targettypes.interfaces.IDataComponentHolderTargetType;
@@ -57,25 +70,37 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
 import net.neoforged.neoforge.event.entity.living.MobSpawnEvent.PositionCheck;
+import net.neoforged.neoforge.event.entity.living.MobSpawnEvent.SpawnPlacementCheck;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -91,10 +116,12 @@ public class Attributesetter {
     // Directly reference a slf4j logger
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public Attributesetter(IEventBus modEventBus) {
+    public Attributesetter(IEventBus modEventBus, ModContainer modContainer) {
         TargetTypes.bootstrap();
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(NetworkHandler::register);
+
+        modContainer.registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
         NeoForge.EVENT_BUS.register(this);
         if (FMLEnvironment.dist.isClient())
@@ -118,12 +145,91 @@ public class Attributesetter {
     public void datapackReload(AddReloadListenerEvent e)
     {
         ra = e.getRegistryAccess();
+        // Recipe removals run once the reload listener has parsed the entries, against the recipe manager this
+        // reload is building - which is why we grab it here instead of going through the server.
+        RemovalRegistry.setServerContext(e.getServerResources().getRecipeManager(), e.getRegistryAccess());
         e.addListener(dr);
     }
 
-    public static void processEntity(LivingEntity le)
+    @SubscribeEvent
+    public void serverStarting(ServerStartingEvent e)
     {
+        // Give the unique registry a handle to the running server so it can reach the per-save counts.
+        UniqueRegistry.setServer(e.getServer());
+    }
+
+    @SubscribeEvent
+    public void serverStopped(ServerStoppedEvent e)
+    {
+        // Don't hold on to a dead server's recipe manager: on a client, the next world could be a different one.
+        RemovalRegistry.setServerContext(null, null);
+        UniqueRegistry.setServer(null);
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent e)
+    {
+        Commands.register(e.getDispatcher());
+    }
+
+    /**
+     * Counts crafted unique items and enforces their cap: if fewer than the crafted amount are still allowed, the
+     * result stack is shrunk to what's permitted (0 = the player gets nothing).
+     */
+    @SubscribeEvent
+    public void onItemCrafted(PlayerEvent.ItemCraftedEvent e)
+    {
+        if (!UniqueRegistry.hasItemRules())
+            return;
+        var player = e.getEntity();
+        if (player.level().isClientSide)
+            return;
+        var crafted = e.getCrafting();
+        if (crafted.isEmpty())
+            return;
+        int allowed = UniqueRegistry.tryConsumeItem(crafted.getItem(), crafted.getCount(), player.level());
+        if (allowed < crafted.getCount())
+            crafted.setCount(Math.max(0, allowed));
+    }
+
+    /**
+     * Applies every matching entry to the entity.
+     * @return true when an entry asks for the entity to be deleted from the game, in which case nothing was
+     *         applied and the caller is expected to keep it out of the world.
+     */
+    /** NBT flag stored on an entity once it has been counted against a unique cap, so chunk reloads don't recount. */
+    public static final String UNIQUE_COUNTED_TAG = "attributesetter:unique_counted";
+
+    public static boolean processEntity(LivingEntity le)
+    {
+        return processEntity(le, true);
+    }
+
+    /**
+     * @param newSpawn true when this is a genuine new spawn that should count against (and be gated by) unique
+     *                 caps; false for entities loaded from disk, which are grandfathered in (tagged as counted
+     *                 without incrementing, so a cap added after they existed doesn't cull or recount them).
+     */
+    public static boolean processEntity(LivingEntity le, boolean newSpawn)
+    {
+        // A broad selector (isEnemy, a regex, a tag) must never be able to delete the player.
+        boolean removable = !(le instanceof Player);
+        if (removable && RemovalRegistry.isRemoved(le.getType()))
+            return true;
+
+        if (removable && UniqueRegistry.hasEntityRules() && processUniqueEntity(le, newSpawn))
+            return true;
+
         final var entries = TargetTypes.ENTITY.getGenericEntriesFor(le);
+        if (removable)
+        {
+            for (var entry : entries)
+            {
+                if (entry instanceof EntityRemoveSetter)
+                    return true;
+            }
+        }
+
         if (le.getType() == EntityType.PLAYER)
         {
             for (var entry : entries)
@@ -135,7 +241,7 @@ public class Attributesetter {
             }
         }
         if (((ASLivingEntity)le).as$isLoaded())
-            return;
+            return false;
 
         ((ASLivingEntity)le).as$setLoaded();
 
@@ -144,6 +250,42 @@ public class Attributesetter {
             entry.apply(le);
         }
         le.setHealth(le.getMaxHealth());
+        return false;
+    }
+
+    /**
+     * Gates one entity against its unique cap. Idempotent per entity instance via the {@link #UNIQUE_COUNTED_TAG}
+     * persistent flag, so an entity that already counts is always allowed and never counted twice (chunk reloads,
+     * or the PositionCheck / JoinLevel double fire of a single spawn).
+     *
+     * @return true when the entity is over the cap and must be kept out of the world.
+     */
+    private static boolean processUniqueEntity(LivingEntity le, boolean newSpawn)
+    {
+        var rule = UniqueRegistry.getEntityRule(le.getType());
+        if (rule == null)
+            return false;
+
+        var pdata = le.getPersistentData();
+        if (pdata.getBoolean(UNIQUE_COUNTED_TAG))
+            return false;
+
+        // Entities that were already in the save when the cap appeared are grandfathered: tag them so they aren't
+        // culled or counted, but leave the counter alone.
+        if (!newSpawn)
+        {
+            pdata.putBoolean(UNIQUE_COUNTED_TAG, true);
+            return false;
+        }
+
+        if (UniqueRegistry.isEntityBlocked(le.getType()))
+            return true;
+
+        UniqueRegistry.consumeEntity(le.getType(), le.level());
+        pdata.putBoolean(UNIQUE_COUNTED_TAG, true);
+        if (le instanceof Mob mob)
+            mob.setPersistenceRequired();
+        return false;
     }
 
     @SubscribeEvent
@@ -153,9 +295,24 @@ public class Attributesetter {
         var entity = e.getEntity();
         if (world.isClientSide)
             return;
+
+        // Removed items never make it into the world as a dropped stack, and removed entities never join a level -
+        // which also takes care of the ones already saved in a chunk, since they are dropped on load.
+        if (entity instanceof ItemEntity itemEntity)
+        {
+            if (RemovalRegistry.isRemoved(itemEntity.getItem().getItem()))
+                e.setCanceled(true);
+            return;
+        }
         if (!(entity instanceof LivingEntity le))
             return;
-        processEntity(le);
+        // Entities loaded from disk already existed in this save, so they must not count against (or be culled by)
+        // a unique cap that was added later - only genuine new spawns do.
+        if (processEntity(le, !e.loadedFromDisk()))
+        {
+            e.setCanceled(true);
+            return;
+        }
 
         // Sync TargetType data to players when they join the server
         if (entity instanceof ServerPlayer player) {
@@ -172,15 +329,64 @@ public class Attributesetter {
         if (world.isClientSide())
             return;
 
-        processEntity(entity);
+        if (processEntity(entity))
+            e.setResult(PositionCheck.Result.FAIL);
     }
+
+    /**
+     * Denies spawn attempts for removed entity types before the game builds a candidate, so removed mobs don't
+     * keep eating the mob cap. Only type-resolvable removals get here; the rest are caught when they join.
+     */
+    @SubscribeEvent
+    public void onSpawnPlacementCheck(SpawnPlacementCheck e)
+    {
+        if (RemovalRegistry.isRemoved(e.getEntityType()))
+            e.setResult(SpawnPlacementCheck.Result.FAIL);
+    }
+
     @SubscribeEvent
     public void onEntityBred(BabyEntitySpawnEvent e)
     {
+        if (e.getChild() == null)
+            return;
         var world = e.getChild().level();
         if (world.isClientSide())
             return;
-        processEntity(e.getChild());
+        if (processEntity(e.getChild()))
+            e.setCanceled(true);
+    }
+
+    /**
+     * Sweeps removed items out of player inventories, so copies that were already in the world when the datapack
+     * changed disappear too. Throttled to once a second and skipped entirely when nothing is removed.
+     */
+    @SubscribeEvent
+    public void onPlayerTick(PlayerTickEvent.Post e)
+    {
+        var player = e.getEntity();
+        if (player.level().isClientSide)
+            return;
+        if (!RemovalRegistry.hasRemovedItems() || player.tickCount % 20 != 0)
+            return;
+
+        boolean changed = sweepRemovedItems(player.getInventory());
+        changed |= sweepRemovedItems(player.getEnderChestInventory());
+        if (changed)
+            player.containerMenu.broadcastChanges();
+    }
+
+    private static boolean sweepRemovedItems(Container container)
+    {
+        boolean changed = false;
+        for (int i = 0; i < container.getContainerSize(); i++)
+        {
+            var stack = container.getItem(i);
+            if (stack.isEmpty() || !RemovalRegistry.isRemoved(stack.getItem()))
+                continue;
+            container.setItem(i, ItemStack.EMPTY);
+            changed = true;
+        }
+        return changed;
     }
 
     //TODO: Selectors that get re-checkd on certain events (like NBT changes)
@@ -361,8 +567,160 @@ public class Attributesetter {
             return null;
         });
     }
+    private static boolean isRemoveOperation(com.google.gson.JsonObject obj)
+    {
+        var opElement = obj.get("operation");
+        if (opElement == null)
+            return false;
+        var op = opElement.getAsString();
+        return op.equalsIgnoreCase("remove") || op.equalsIgnoreCase("delete");
+    }
+
+    /** @return 0 = not a unique op, 1 = {@code make_unique} (per-type), 2 = {@code make_unique_shared} (pooled). */
+    private static int uniqueMode(com.google.gson.JsonObject obj)
+    {
+        var opElement = obj.get("operation");
+        if (opElement == null)
+            return 0;
+        var op = opElement.getAsString();
+        if (op.equalsIgnoreCase("make_unique_shared") || op.equalsIgnoreCase("unique_shared"))
+            return 2;
+        if (op.equalsIgnoreCase("make_unique") || op.equalsIgnoreCase("unique"))
+            return 1;
+        return 0;
+    }
+
+    private static UniqueRegistry.Rule parseUniqueRule(com.google.gson.JsonObject obj, String id, boolean shared)
+    {
+        var limitElement = obj.get("limit");
+        if (limitElement == null)
+            limitElement = obj.get("count");
+        if (limitElement == null)
+            limitElement = obj.get("max");
+        if (limitElement == null)
+        {
+            Attributesetter.LOGGER.error("Missing limit for make_unique entry {}", id);
+            return null;
+        }
+        int limit = Math.max(0, limitElement.getAsInt());
+        boolean broadcast = obj.has("broadcast") ? obj.get("broadcast").getAsBoolean() : Config.broadcastByDefault();
+        String message = obj.has("message") ? obj.get("message").getAsString() : null;
+        return new UniqueRegistry.Rule(limit, shared ? id : null, broadcast, message);
+    }
+
+    private static float getMultiplier(com.google.gson.JsonObject obj)
+    {
+        return obj.has("multiplier") ? obj.get("multiplier").getAsFloat() : 1.0f;
+    }
+
+    private static float getOffset(com.google.gson.JsonObject obj)
+    {
+        return obj.has("offset") ? obj.get("offset").getAsFloat() : 0.0f;
+    }
+
     private void setupSetters()
     {
+        // Removal: takes the item / entity out of the game entirely. Registered at the highest priority so it is
+        // checked before every other operation. Item removal is accepted in both the `item` folder (itemstack,
+        // what people normally use for items) and the `item_type` folder, so either works.
+        TargetTypes.ITEMSTACK.registerSetterBuilder(2, (obj, id, selector) -> {
+            if (!isRemoveOperation(obj))
+                return null;
+            return new ItemStackRemoveSetter();
+        });
+        TargetTypes.ITEM.registerSetterBuilder(2, (obj, id, selector) -> {
+            if (!isRemoveOperation(obj))
+                return null;
+            return new ItemRemoveSetter();
+        });
+        TargetTypes.ENTITY.registerSetterBuilder(2, (obj, id, selector) -> {
+            if (!isRemoveOperation(obj))
+                return null;
+            return new EntityRemoveSetter();
+        });
+
+        // Unique: caps how many copies of an item/entity may ever be created in the save. Same folders as removal.
+        // `make_unique` caps each matched type on its own; `make_unique_shared` pools every type the one entry
+        // matched into a single counter (so `a || b` limit 1 means only one of the two, ever).
+        TargetTypes.ITEMSTACK.registerSetterBuilder(2, (obj, id, selector) -> {
+            int mode = uniqueMode(obj);
+            if (mode == 0)
+                return null;
+            var rule = parseUniqueRule(obj, id, mode == 2);
+            return rule == null ? null : new ItemStackUniqueSetter(rule);
+        });
+        TargetTypes.ITEM.registerSetterBuilder(2, (obj, id, selector) -> {
+            int mode = uniqueMode(obj);
+            if (mode == 0)
+                return null;
+            var rule = parseUniqueRule(obj, id, mode == 2);
+            return rule == null ? null : new ItemUniqueSetter(rule);
+        });
+        TargetTypes.ENTITY.registerSetterBuilder(2, (obj, id, selector) -> {
+            int mode = uniqueMode(obj);
+            if (mode == 0)
+                return null;
+            var rule = parseUniqueRule(obj, id, mode == 2);
+            return rule == null ? null : new EntityUniqueSetter(rule);
+        });
+
+        // Blocks
+        // Removal: turns every generated/placed copy into air and drops the BlockItem.
+        TargetTypes.BLOCK.registerSetterBuilder(2, (obj, id, selector) -> {
+            if (!isRemoveOperation(obj))
+                return null;
+            return new BlockRemoveSetter();
+        });
+        // Replace: swaps the block for another one on generation/placement.
+        TargetTypes.BLOCK.registerSetterBuilder(2, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("replace"))
+                return null;
+            var withElement = obj.get("with");
+            if (withElement == null)
+                withElement = obj.get("to");
+            if (withElement == null)
+                withElement = obj.get("block");
+            if (withElement == null)
+            {
+                Attributesetter.LOGGER.error("Missing 'with' block for block replace setter in entry {}", id);
+                return null;
+            }
+            var res = ResourceLocation.parse(withElement.getAsString());
+            var block = BuiltInRegistries.BLOCK.getOptional(res).orElse(null);
+            if (block == null)
+            {
+                Attributesetter.LOGGER.error("Failed to find replacement block {} in entry {}", res, id);
+                return null;
+            }
+            return new BlockReplaceSetter(block);
+        });
+        // Hardness (destroySpeed), blast resistance and mining speed: offset/multiplier tuners.
+        TargetTypes.BLOCK.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("hardness"))
+                return null;
+            return new BlockHardnessSetter(getMultiplier(obj), getOffset(obj));
+        });
+        TargetTypes.BLOCK.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var op = opElement.getAsString();
+            if (!op.equalsIgnoreCase("explosion_resistance") && !op.equalsIgnoreCase("blast_resistance"))
+                return null;
+            return new BlockExplosionResistanceSetter(getMultiplier(obj), getOffset(obj));
+        });
+        TargetTypes.BLOCK.registerSetterBuilder(1, (obj, id, selector) -> {
+            var opElement = obj.get("operation");
+            if (opElement == null)
+                return null;
+            var op = opElement.getAsString();
+            if (!op.equalsIgnoreCase("mining_speed") && !op.equalsIgnoreCase("break_speed"))
+                return null;
+            return new BlockMiningSpeedSetter(getMultiplier(obj), getOffset(obj));
+        });
+
         // Simple attribute setters
         TargetTypes.ENTITY.registerSetterBuilder(0, (obj, id, selector) -> {
             var attrElement = obj.get("attribute");

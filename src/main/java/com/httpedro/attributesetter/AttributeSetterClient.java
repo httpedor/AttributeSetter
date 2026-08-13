@@ -1,233 +1,234 @@
 package com.httpedro.attributesetter;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.Holder;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.world.entity.EquipmentSlotGroup;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
-import net.minecraft.core.component.DataComponents;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
-import org.apache.commons.lang3.math.NumberUtils;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
+/**
+ * Vanilla renders one tooltip line per attribute modifier. Because AttributeSetter injects extra
+ * modifiers through {@link net.neoforged.neoforge.event.ItemAttributeModifierEvent}, an item can end
+ * up showing several lines for the same attribute (e.g. the item's own "+3 Armor" and AS's "+2 Armor")
+ * and separate blue lines for main-hand attack damage/speed that vanilla would otherwise fold into the
+ * green summary line.
+ * <p>
+ * Rather than scraping the already-localized tooltip text, this rebuilds the attribute section from the
+ * real modifier data ({@link ItemStack#getAttributeModifiers()}), merging modifiers that share an
+ * attribute + slot group + operation and folding all main-hand attack damage/speed into a single green
+ * total. The output matches vanilla formatting exactly, so it is indistinguishable from a vanilla item
+ * that happened to have those combined modifiers.
+ */
 public class AttributeSetterClient {
 
-    private static final String MAINHAND_SLOT = "mainhand";
-    private static final String DMG_ATTR_NAME = "attribute.name.generic.attack_damage";
-    private static final String SPD_ATTR_NAME = "attribute.name.generic.attack_speed";
+    /** Player base values used when no player is available to query (e.g. a JEI/REI render). */
+    private static final double DEFAULT_ATTACK_DAMAGE = 1.0;
+    private static final double DEFAULT_ATTACK_SPEED = 4.0;
 
     public static void mergeTooltips(ItemTooltipEvent e)
     {
         if (Attributesetter.isApothic)
             return;
-        var original = new ArrayList<>(e.getToolTip());
+
+        List<Component> lines = e.getToolTip();
+        List<Component> original = new ArrayList<>(lines);
         try
         {
-            var lines = e.getToolTip();
-            Map<String, Map<String, Double>> blueAttributes = new HashMap<>();
-            Map<String, Integer> slotIndexes = new HashMap<>();
-            Map<String, Double> greenAttributes = new HashMap<>();
-            Map<String, MainhandTotals> mainhandTotals = new HashMap<>();
-            String currentSlot = null;
-            int i = 0;
-            for (Iterator<Component> it = lines.iterator(); it.hasNext();)
-            {
-                var line = it.next();
-                var content = line.getContents();
-                //Normal attr modifiers
-                if (content instanceof TranslatableContents ttc)
-                {
-                    if (ttc.getKey().startsWith("item.modifiers"))
-                    {
-                        currentSlot = ttc.getKey().substring(ttc.getKey().lastIndexOf('.')+1);
-                        slotIndexes.put(currentSlot, i);
-                    }
-                    else if (ttc.getKey().startsWith("attribute.modifier.plus.") && currentSlot != null)
-                    {
-                        var value = parseAttributeAmount(ttc.getArgs()[0]);
-                        if (value == null)
-                        {
-                            i++;
-                            continue;
-                        }
-                        var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                        int op = parseModifierOperationSuffix(ttc.getKey());
-                        if (isMainhandDamageOrSpeed(attrName, currentSlot) && op >= 0)
-                        {
-                            var totals = mainhandTotals.computeIfAbsent(attrName, key -> new MainhandTotals());
-                            totals.sawModifier = true;
-                            totals.addValue += op == 0 ? value : 0.0;
-                            totals.multBase += op == 1 ? value : 0.0;
-                            totals.multTotal += op == 2 ? value : 0.0;
-                            it.remove();
-                        }
-                        else if (greenAttributes.containsKey(attrName))
-                        {
-                            greenAttributes.put(attrName, greenAttributes.get(attrName) + value);
-                            it.remove();
-                        }
-                        else
-                        {
-                            if (!blueAttributes.containsKey(currentSlot))
-                                blueAttributes.put(currentSlot, new HashMap<>());
+            int start = firstAttributeHeader(lines);
+            if (start < 0)
+                return; // item has no attribute section to merge
 
-                            blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) + value);
-                            it.remove();
-                        }
-                    }
-                    else if (ttc.getKey().startsWith("attribute.modifier.take.") && currentSlot != null)
-                    {
-                        var value = parseAttributeAmount(ttc.getArgs()[0]);
-                        if (value == null)
-                        {
-                            i++;
-                            continue;
-                        }
-                        var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                        int op = parseModifierOperationSuffix(ttc.getKey());
-                        if (isMainhandDamageOrSpeed(attrName, currentSlot) && op >= 0)
-                        {
-                            var totals = mainhandTotals.computeIfAbsent(attrName, key -> new MainhandTotals());
-                            totals.sawModifier = true;
-                            totals.addValue += op == 0 ? -value : 0.0;
-                            totals.multBase += op == 1 ? -value : 0.0;
-                            totals.multTotal += op == 2 ? -value : 0.0;
-                            it.remove();
-                        }
-                        else if (greenAttributes.containsKey(attrName))
-                        {
-                            greenAttributes.put(attrName, greenAttributes.get(attrName) - value);
-                            it.remove();
-                        }
-                        else
-                        {
-                            if (!blueAttributes.containsKey(currentSlot))
-                                blueAttributes.put(currentSlot, new HashMap<>());
-                            blueAttributes.get(currentSlot).put(attrName, blueAttributes.get(currentSlot).getOrDefault(attrName, 0.0) - value);
-                            it.remove();
-                        }
-                    }
-                }
-                else
-                {
-                    for (var part : line.getSiblings())
-                    {
-                        if (part.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier.equals.0"))
-                        {
-                            var value = parseAttributeAmount(ttc.getArgs()[0]);
-                            if (value == null)
-                            {
-                                i++;
-                                continue;
-                            }
-                            var attrName = ((TranslatableContents)((MutableComponent)ttc.getArgs()[1]).getContents()).getKey();
-                            if (isMainhandDamageOrSpeed(attrName, currentSlot))
-                            {
-                                var totals = mainhandTotals.computeIfAbsent(attrName, key -> new MainhandTotals());
-                                totals.equalsValue = value;
-                                it.remove();
-                            }
-                            else
-                            {
-                                greenAttributes.put(attrName, value);
-                                it.remove();
-                            }
-                        }
-                    }
-                }
-                i++;
-            }
-            for (var entry : mainhandTotals.entrySet())
+            // Include the blank separator vanilla inserts before the first slot-group header.
+            int from = (start > 0 && isBlank(lines.get(start - 1))) ? start - 1 : start;
+            int to = attributeSectionEnd(lines, from);
+
+            List<Component> merged = buildMergedSection(e.getItemStack(), e.getEntity());
+
+            lines.subList(from, to).clear();
+            lines.addAll(from, merged);
+        }
+        catch (Exception ex)
+        {
+            // Never break another mod's tooltip: restore whatever was there before we touched it.
+            lines.clear();
+            lines.addAll(original);
+        }
+    }
+
+    /** Rebuilds the whole "When in Main Hand: ..." block(s) from real modifier data. */
+    private static List<Component> buildMergedSection(ItemStack stack, Player player)
+    {
+        // add + multBase + multTotal totals for main-hand attack damage/speed, folded into one green line.
+        Map<EquipmentSlotGroup, Map<Holder<Attribute>, double[]>> attackFold = new EnumMap<>(EquipmentSlotGroup.class);
+        // per slot group: (attribute, operation) -> summed amount, for every other modifier.
+        Map<EquipmentSlotGroup, Map<MergeKey, Double>> summed = new EnumMap<>(EquipmentSlotGroup.class);
+
+        // getAttributeModifiers() fires ItemAttributeModifierEvent once and yields exactly the set
+        // vanilla rendered (item defaults + AttributeSetter's additions).
+        for (ItemAttributeModifiers.Entry entry : stack.getAttributeModifiers().modifiers())
+        {
+            EquipmentSlotGroup group = entry.slot();
+            Holder<Attribute> attribute = entry.attribute();
+            AttributeModifier modifier = entry.modifier();
+            if (group == EquipmentSlotGroup.MAINHAND && isAttackAttribute(attribute))
             {
-                var attrName = entry.getKey();
-                var totals = entry.getValue();
-                if (!totals.sawModifier && totals.equalsValue == null)
-                    continue;
-                double base = attrName.equals(DMG_ATTR_NAME) ? 1.0 : 4.0;
-                double total = totals.sawModifier
-                        ? (base + totals.addValue) * (1.0 + totals.multBase) * (1.0 + totals.multTotal)
-                        : totals.equalsValue;
-                greenAttributes.put(attrName, total);
+                attackFold.computeIfAbsent(group, g -> new LinkedHashMap<>())
+                        .computeIfAbsent(attribute, a -> new double[3])[modifier.operation().id()] += modifier.amount();
             }
-            for (var slotEntry : blueAttributes.entrySet())
+            else
             {
-                i = 0;
-                var slot = slotEntry.getKey();
-                for (var entry : slotEntry.getValue().entrySet())
+                summed.computeIfAbsent(group, g -> new LinkedHashMap<>())
+                        .merge(new MergeKey(attribute, modifier.operation().id()), modifier.amount(), Double::sum);
+            }
+        }
+
+        List<Component> out = new ArrayList<>();
+        for (EquipmentSlotGroup group : EquipmentSlotGroup.values())
+        {
+            List<Component> groupLines = new ArrayList<>();
+
+            Map<Holder<Attribute>, double[]> fold = attackFold.get(group);
+            if (fold != null)
+                for (var entry : fold.entrySet())
                 {
-                    var attrName = entry.getKey();
-                    var value = entry.getValue();
-                    if (value == 0)
-                    {
-                        i++;
+                    double[] totals = entry.getValue();
+                    double base = baseValue(entry.getKey(), player);
+                    double total = (base + totals[0]) * (1.0 + totals[1]) * (1.0 + totals[2]);
+                    groupLines.add(greenLine(entry.getKey(), total));
+                }
+
+            Map<MergeKey, Double> sums = summed.get(group);
+            if (sums != null)
+                for (var entry : sums.entrySet())
+                {
+                    double amount = entry.getValue();
+                    if (amount == 0.0)
                         continue;
-                    }
-                    var color = value > 0 ? ChatFormatting.BLUE : ChatFormatting.RED;
-                    var line = Component.translatable(value > 0 ? "attribute.modifier.plus.0" : "attribute.modifier.take.0", Component.literal(ItemAttributeModifiers.ATTRIBUTE_MODIFIER_FORMAT.format(Math.abs(value))).withStyle(color), Component.translatable(attrName).withStyle(color)).withStyle(color);
-                    lines.add(slotIndexes.get(slot) + i + 1, line);
-                    i++;
+                    groupLines.add(plusOrTakeLine(entry.getKey().attribute(), entry.getKey().operation(), amount));
                 }
-            }
-            i = 0;
-            for (var entry : greenAttributes.entrySet())
+
+            if (!groupLines.isEmpty())
             {
-                var attrName = entry.getKey();
-                var value = entry.getValue();
-                var color = ChatFormatting.DARK_GREEN;
-                var line = Component.literal(" ").append(Component.translatable("attribute.modifier.equals.0", Component.literal(ItemAttributeModifiers.ATTRIBUTE_MODIFIER_FORMAT.format(value)).withStyle(color), Component.translatable(attrName).withStyle(color)));
-                lines.add(slotIndexes.get(MAINHAND_SLOT) + i + 1, line);
-                i++;
+                out.add(Component.empty());
+                out.add(Component.translatable("item.modifiers." + group.getSerializedName()).withStyle(ChatFormatting.GRAY));
+                out.addAll(groupLines);
             }
-        } catch (Exception ex)
-        {
-            e.getToolTip().clear();
-            e.getToolTip().addAll(original);
         }
-
+        return out;
     }
 
-    private static boolean isMainhandDamageOrSpeed(String attrName, String currentSlot)
+    /** A folded main-hand attack line: " 7 Attack Damage" in dark green, matching vanilla. */
+    private static Component greenLine(Holder<Attribute> attribute, double value)
     {
-        return MAINHAND_SLOT.equals(currentSlot) && (DMG_ATTR_NAME.equals(attrName) || SPD_ATTR_NAME.equals(attrName));
+        return Component.literal(" ").append(Component.translatable(
+                "attribute.modifier.equals.0",
+                ItemAttributeModifiers.ATTRIBUTE_MODIFIER_FORMAT.format(value),
+                Component.translatable(attribute.value().getDescriptionId())
+        )).withStyle(ChatFormatting.DARK_GREEN);
     }
 
-    private static int parseModifierOperationSuffix(String key)
+    /** A regular blue/red modifier line, formatted exactly as vanilla's addModifierTooltip. */
+    private static Component plusOrTakeLine(Holder<Attribute> attribute, int operation, double amount)
     {
-        int lastDot = key.lastIndexOf('.');
-        if (lastDot == -1 || lastDot + 1 >= key.length())
-            return -1;
-        try
+        double display;
+        if (operation == 1 || operation == 2) // ADD_MULTIPLIED_BASE / ADD_MULTIPLIED_TOTAL
+            display = amount * 100.0;
+        else if (attribute.value() == Attributes.KNOCKBACK_RESISTANCE.value())
+            display = amount * 10.0;
+        else
+            display = amount;
+
+        boolean positive = amount > 0.0;
+        String key = (positive ? "attribute.modifier.plus." : "attribute.modifier.take.") + operation;
+        return Component.translatable(
+                key,
+                ItemAttributeModifiers.ATTRIBUTE_MODIFIER_FORMAT.format(Math.abs(display)),
+                Component.translatable(attribute.value().getDescriptionId())
+        ).withStyle(attribute.value().getStyle(positive));
+    }
+
+    private static boolean isAttackAttribute(Holder<Attribute> attribute)
+    {
+        return attribute.value() == Attributes.ATTACK_DAMAGE.value() || attribute.value() == Attributes.ATTACK_SPEED.value();
+    }
+
+    private static double baseValue(Holder<Attribute> attribute, Player player)
+    {
+        if (player != null)
+            return player.getAttributeBaseValue(attribute);
+        return attribute.value() == Attributes.ATTACK_SPEED.value() ? DEFAULT_ATTACK_SPEED : DEFAULT_ATTACK_DAMAGE;
+    }
+
+    // --- tooltip line scanning -------------------------------------------------------------------
+
+    private static int firstAttributeHeader(List<Component> lines)
+    {
+        for (int i = 0; i < lines.size(); i++)
+            if (isSlotHeader(lines.get(i)))
+                return i;
+        return -1;
+    }
+
+    /**
+     * Given the index of the leading blank/header, returns the exclusive end of the attribute section,
+     * consuming consecutive {@code [blank] header modifier...} groups without eating a trailing blank
+     * that belongs to whatever section follows.
+     */
+    private static int attributeSectionEnd(List<Component> lines, int from)
+    {
+        int i = from;
+        while (i < lines.size())
         {
-            return Integer.parseInt(key.substring(lastDot + 1));
+            int j = i;
+            if (isBlank(lines.get(j)))
+                j++;
+            if (j >= lines.size() || !isSlotHeader(lines.get(j)))
+                break;
+            j++; // header
+            while (j < lines.size() && isModifierLine(lines.get(j)) && !isSlotHeader(lines.get(j)))
+                j++;
+            i = j;
         }
-        catch (NumberFormatException ex)
+        return i;
+    }
+
+    private static boolean isSlotHeader(Component line)
+    {
+        return line.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("item.modifiers.");
+    }
+
+    private static boolean isModifierLine(Component line)
+    {
+        if (line.getContents() instanceof TranslatableContents ttc)
         {
-            return -1;
+            String key = ttc.getKey();
+            if (key.startsWith("item.modifiers.") || key.startsWith("attribute.modifier."))
+                return true;
         }
+        // Green folded lines are a literal " " with the "attribute.modifier.equals.*" translatable as a sibling.
+        for (Component sibling : line.getSiblings())
+            if (sibling.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier."))
+                return true;
+        return false;
     }
 
-    private static Double parseAttributeAmount(Object arg)
+    private static boolean isBlank(Component line)
     {
-        if (!(arg instanceof Component component))
-            return null;
-        var text = component.getString();
-        if (!NumberUtils.isCreatable(text))
-            return null;
-        return Double.parseDouble(text);
+        return line.getString().isEmpty();
     }
 
-    private static final class MainhandTotals
-    {
-        double addValue;
-        double multBase;
-        double multTotal;
-        Double equalsValue;
-        boolean sawModifier;
-    }
-
+    private record MergeKey(Holder<Attribute> attribute, int operation) {}
 }

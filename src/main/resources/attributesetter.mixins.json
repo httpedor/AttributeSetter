@@ -5,10 +5,17 @@
   "compatibilityLevel": "JAVA_21",
   "refmap": "attributesetter.refmap.json",
   "mixins": [
+    "AbstractVillagerMixin",
     "AttributeInstanceMixin",
     "AttributeSupplierMixin",
+    "BlockBehaviourAccessor",
+    "BlockStateBaseAccessor",
+    "CreativeModeTabMixin",
     "CreeperMixin",
+    "LevelChunkMixin",
     "LivingEntityMixin",
+    "LootTableMixin",
+    "ProtoChunkMixin",
     "RegistrationEventsMixin"
   ],
   "client": [

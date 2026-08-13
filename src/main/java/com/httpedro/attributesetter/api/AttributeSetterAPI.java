@@ -36,6 +36,10 @@ public class AttributeSetterAPI {
             targetType.clearEntries();
         }
         AttributeInjector.clearAll();
+        RemovalRegistry.clear();
+        UniqueRegistry.clearRules();
+        BlockReplacementRegistry.clear();
+        BlockDefaults.restoreModified();
 
         for (var item : BuiltInRegistries.ITEM)
         {
