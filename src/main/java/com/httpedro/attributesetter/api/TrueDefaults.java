@@ -1,5 +1,6 @@
 package com.httpedro.attributesetter.api;
 
+import com.httpedro.attributesetter.util.RegistryValues;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -14,7 +15,7 @@ public class TrueDefaults {
     public static void populate()
     {
         trueDefaults = new HashMap<>();
-        for (var item : BuiltInRegistries.ITEM)
+        for (var item : RegistryValues.of(BuiltInRegistries.ITEM))
         {
             trueDefaults.put(item, item.components());
         }

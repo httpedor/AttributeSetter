@@ -1,8 +1,11 @@
 package com.httpedro.attributesetter;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import com.httpedro.attributesetter.network.NetworkHandler;
@@ -35,15 +38,26 @@ import net.minecraft.world.entity.MobCategory;
 import org.slf4j.Logger;
 
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.httpedro.attributesetter.api.AttributeSetterAPI;
+import com.httpedro.attributesetter.api.TargetType;
 import com.httpedro.attributesetter.compat.curios.CuriosCompat;
 import com.httpedro.attributesetter.selectors.ASSelector;
+import com.httpedro.attributesetter.selectors.AlwaysSelector;
 import com.httpedro.attributesetter.selectors.CompositeASSelector;
+import com.httpedro.attributesetter.selectors.NamespaceSelector;
 import com.httpedro.attributesetter.selectors.IdSelector;
 import com.httpedro.attributesetter.selectors.NbtSelector;
 import com.httpedro.attributesetter.selectors.RegexSelector;
 import com.httpedro.attributesetter.selectors.TagSelector;
 import com.httpedro.attributesetter.selectors.HasComponentSelector;
+import com.httpedro.attributesetter.selectors.recipe.IngredientSelector;
+import com.httpedro.attributesetter.selectors.recipe.RecipeTypeSelector;
+import com.httpedro.attributesetter.selectors.recipe.ResultSelector;
+import com.httpedro.attributesetter.setters.recipe.RecipeRemoveSetter;
+import com.httpedro.attributesetter.setters.recipe.RecipeReplaceIngredientSetter;
+import com.httpedro.attributesetter.setters.recipe.RecipeReplaceResultSetter;
+import com.httpedro.attributesetter.util.JsonHelper;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeModifierSetter;
 import com.httpedro.attributesetter.setters.entity.EntityAttributeSetter;
 import com.httpedro.attributesetter.setters.entity.CreeperExplosionPowerSetter;
@@ -64,11 +78,13 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.commands.arguments.item.ItemParser;
 import net.minecraft.commands.arguments.item.ItemParser.ItemResult;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityType;
@@ -138,6 +154,7 @@ public class Attributesetter {
     {
         setupSelectors();
         setupSetters();
+        setupSetterShorthands();
         isApothic = ModList.get().isLoaded("attributeslib");
     }
 
@@ -393,180 +410,435 @@ public class Attributesetter {
     @SuppressWarnings("unchecked")
 	private void setupSelectors()
     {
+        // Names for "has this data component". Each is also reachable the long way round, as
+        // {"has_component": "minecraft:food"} - these are just the ones common enough to deserve a word.
+        Map<String, DataComponentType<?>> componentShorthands = new LinkedHashMap<>();
+        componentShorthands.put("isFood", DataComponents.FOOD);
+        componentShorthands.put("hasDurability", DataComponents.MAX_DAMAGE);
+        componentShorthands.put("isEnchanted", DataComponents.ENCHANTMENTS);
+        componentShorthands.put("isPotion", DataComponents.POTION_CONTENTS);
+        componentShorthands.put("isTool", DataComponents.TOOL);
+        componentShorthands.put("isDyeable", DataComponents.DYED_COLOR);
+        componentShorthands.put("isFireResistant", DataComponents.FIRE_RESISTANT);
+        componentShorthands.put("hasAttributes", DataComponents.ATTRIBUTE_MODIFIERS);
 
-        Map<String, DataComponentType<?>> components = Map.of(
-                "isFood", DataComponents.FOOD,
-                "hasDurability", DataComponents.MAX_DAMAGE,
-                "isEnchanted", DataComponents.ENCHANTMENTS,
-                "isPotion", DataComponents.POTION_CONTENTS
-        );
         for (var targetType : AttributeSetterAPI.getAllTargetTypes())
+            setupSelectorsFor(targetType, componentShorthands);
+
+        setupEntitySelectors();
+        setupRecipeSelectors();
+    }
+
+    /**
+     * Registers every selector a target type can support, working out what it can do from the interfaces it
+     * implements. Each one goes in twice over: as an object under a type name (which doubles as a field name in
+     * a type-less selector object), and as the shorthand string people write in the common case.
+     *
+     * <p>Nothing here is registered per target type by hand, and a target type that derives from another one
+     * inherits whatever the parent got - which is why an item selector like {@code isFood}, or a plain id,
+     * works just as well on an item stack.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> void setupSelectorsFor(TargetType<T, ?> targetType, Map<String, DataComponentType<?>> componentShorthands)
+    {
+        // ---- matches everything -------------------------------------------------------------------------
+        targetType.registerJsonSelector((obj, fileName) -> new AlwaysSelector<>(), "always", "everything", "any_target");
+        targetType.registerSelectorBuilder(80, (str, fileName) ->
+                str.equals("*") || str.equalsIgnoreCase("everything") ? new AlwaysSelector<>() : null);
+
+        // ---- boolean combinators ------------------------------------------------------------------------
+        targetType.registerJsonSelector((obj, fileName) -> combine(
+                parseSelectorList(targetType, JsonHelper.first(obj, "selectors", "value", "all", "and", "of"), fileName),
+                CompositeASSelector.Mode.AND), "all", "and", "all_of");
+        targetType.registerJsonSelector((obj, fileName) -> combine(
+                parseSelectorList(targetType, JsonHelper.first(obj, "selectors", "value", "any", "or", "of"), fileName),
+                CompositeASSelector.Mode.OR), "any", "or", "any_of");
+        targetType.registerJsonSelector((obj, fileName) -> {
+            var inner = targetType.parseSelector(JsonHelper.first(obj, "selector", "value", "not", "of"), fileName);
+            if (inner == null)
+                return null;
+            inner.inverted = !inner.inverted;
+            return inner;
+        }, "not", "none_of", "except");
+
+        // `a || b` and `a && b`. Highest priority, so the parts are handed back through the parser one by one.
+        targetType.registerSelectorBuilder(Integer.MAX_VALUE, (str, fileName) -> {
+            CompositeASSelector.Mode mode;
+            String delimiter;
+            if (str.contains("||"))
+            {
+                mode = CompositeASSelector.Mode.OR;
+                delimiter = "\\|\\|";
+            }
+            else if (str.contains("&&"))
+            {
+                mode = CompositeASSelector.Mode.AND;
+                delimiter = "&&";
+            }
+            else
+                return null;
+
+            List<ASSelector<T>> parts = new ArrayList<>();
+            for (var part : str.split(delimiter))
+            {
+                var parsed = targetType.parseSelector(part.trim(), fileName);
+                if (parsed != null)
+                    parts.add(parsed);
+            }
+            return combine(parts, mode);
+        });
+        // `!something`
+        targetType.registerSelectorBuilder(Integer.MAX_VALUE - 1, (str, fileName) -> {
+            if (!str.startsWith("!"))
+                return null;
+            var inner = targetType.parseSelector(str.substring(1).trim(), fileName);
+            if (inner == null)
+                return null;
+            inner.inverted = !inner.inverted;
+            return inner;
+        });
+
+        // ---- anything with a registry id ----------------------------------------------------------------
+        if (targetType instanceof IIdentifiableTargetType)
         {
-            // ID Selector
-            if (targetType instanceof IIdentifiableTargetType itt)
-            {
-                targetType.registerSelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
-                    String namespace = fileName;
-                    if (str.contains(":"))
-                    {
-                        var parts = str.split(":");
-                        namespace = parts[0];
-                        str = parts[1];
-                    }
-                    var res = ResourceLocation.fromNamespaceAndPath(namespace, str);
-                    return new IdSelector(res, itt::getId);
-                });
-                // Regex Selector
-                targetType.registerSelectorBuilder(99, (str, fileName) -> {
-                    var prefix = "regex:";
-                    if (str.contains(prefix))
-                    {
-                        var regex = str.substring(str.indexOf(prefix) + prefix.length()).trim();
-                        return new RegexSelector(regex, (v) -> itt.getId(v).toString());
-                    }
-                    return null;
-                });
-            }
-            // Inverted selector
-            targetType.registerSelectorBuilder(Integer.MAX_VALUE - 1, (String str, String fileName) -> {
-                if (str.startsWith("!"))
-                {
-                    var actualStr = str.substring(1).trim();
-                    var subSelector = targetType.parseSelector(actualStr, fileName);
-                    if (subSelector != null)
-                    {
-                        subSelector.inverted = true;
-                        return (ASSelector)subSelector;
-                    }
-                }
-                return null;
-            });
-            // Composite Selector
-            targetType.registerSelectorBuilder(Integer.MAX_VALUE, (String str, String fileName) -> {
-                CompositeASSelector.Mode mode;
-                String delimiter;
-                if (str.contains("||"))
-                {
-                    mode = CompositeASSelector.Mode.OR;
-                    delimiter = "\\|\\|";
-                }
-                else if (str.contains("&&"))
-                {
-                    mode = CompositeASSelector.Mode.AND;
-                    delimiter = "&&";
-                }
-                else
-                    return null;
+            var itt = (IIdentifiableTargetType<T>) targetType;
 
-                var parts = str.split(delimiter);
-                var selectors = new ArrayList<ASSelector<?>>();
-                for (var part : parts)
+            targetType.registerJsonSelector((obj, fileName) -> {
+                List<ASSelector<T>> parts = new ArrayList<>();
+                for (var raw : JsonHelper.strings(JsonHelper.first(obj, "id", "ids", "value", "name")))
                 {
-                    var sel = targetType.parseSelector(part.trim(), fileName);
-                    if (sel != null)
-                        selectors.add(sel);
+                    var res = parseId(raw, fileName);
+                    if (res == null)
+                    {
+                        LOGGER.warn("'{}' is not a valid id (file '{}')", raw, fileName);
+                        continue;
+                    }
+                    parts.add(new IdSelector<>(res, itt::getId));
                 }
-                if (selectors.size() > 0)
-                    return new CompositeASSelector(selectors, mode);
+                return combine(parts, CompositeASSelector.Mode.OR);
+            }, "id", "ids", "name");
 
-                return null;
-            });
-            if (targetType instanceof RegistryTargetType rtt)
-            {
-                targetType.registerSelectorBuilder(50, (str, fileName) -> {
-                    if (str.startsWith("#"))
-                    {
-                        var tag = str.substring(1);
-                        var tagRes = ResourceLocation.parse(tag);
-                        return new TagSelector<>(tagRes, rtt.getRegistry(), rtt::getSingleton);
-                    }
+            targetType.registerJsonSelector((obj, fileName) -> {
+                var pattern = JsonHelper.string(obj, null, "pattern", "regex", "value", "matches");
+                if (pattern == null)
                     return null;
-                });
-            }
-            else if (targetType instanceof IRegistryAssociatedTargetType iratt && targetType instanceof SingletonTargetType<?>)
-            {
-                targetType.registerSelectorBuilder(50, (str, fileName) -> {
-                    if (str.startsWith("#"))
-                    {
-                        var tag = str.substring(1);
-                        var tagRes = ResourceLocation.parse(tag);
-                        return new TagSelector<>(tagRes, iratt.getRegistry(), (v) -> v);
-                    }
-                    return null;
-                });
-            }
-            if (targetType instanceof INBTSerializableTargetType istt)
-            {
-                targetType.registerSelectorBuilder(100, (str, fileName) -> {
-                    var nbtStartIndex = str.indexOf('{');
-                    var nbtEndIndex = str.lastIndexOf('}');
-                    if (nbtStartIndex != -1 && nbtEndIndex != -1 && nbtEndIndex > nbtStartIndex)
-                    {
-                        String beforePart = str.substring(0, nbtStartIndex).trim();
-                        String nbtPart = str.substring(nbtStartIndex, nbtEndIndex + 1);
-                        ASSelector<?> beforeSelector;
-                        if (beforePart.isEmpty())
-                            beforeSelector = null;
-                        else
-                            beforeSelector = targetType.parseSelector(beforePart, fileName);
-                        if (beforeSelector == null && !beforePart.isEmpty())
-                            return null;
-                        try {
-                            if (beforeSelector != null)
-                            {
-                                return new CompositeASSelector<>(new ASSelector[] {
-                                        beforeSelector,
-                                        new NbtSelector<>(nbtPart, istt.getSerializer())
-                                }, CompositeASSelector.Mode.AND);
-                            }
-                            else
-                                return new NbtSelector<>(nbtPart, istt.getSerializer());
-                        } catch (Exception ex)
-                        {
-                            Attributesetter.LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
-                            return null;
-                        }
-                    }
-                    return null;
-                });
-            }
-            if (targetType instanceof IDataComponentHolderTargetType idchtt)
-            {
-                for (var entry : components.entrySet())
-                {
+                boolean ignoreCase = JsonHelper.bool(obj, false, "ignore_case", "ignorecase", "case_insensitive");
+                var part = switch (JsonHelper.string(obj, "full", "match", "part", "against").toLowerCase(Locale.ROOT)) {
+                    case "path", "name" -> RegexSelector.Part.PATH;
+                    case "namespace", "mod" -> RegexSelector.Part.NAMESPACE;
+                    default -> RegexSelector.Part.FULL;
+                };
+                return RegexSelector.byId(pattern, itt::getId, part, ignoreCase);
+            }, "regex", "pattern", "matches");
 
-                    final String compName = entry.getKey();
-                    final DataComponentType<?> compType = entry.getValue();
-                    targetType.registerSelectorBuilder(60, (str, fileName) -> {
-                        if (str.equals(compName))
-                            return new HasComponentSelector(compType, idchtt::getDataComponentMap);
-                        return null;
-                    });
-                }
-            }
-        }
+            targetType.registerJsonSelector((obj, fileName) -> {
+                List<ASSelector<T>> parts = new ArrayList<>();
+                for (var ns : JsonHelper.strings(JsonHelper.first(obj, "namespace", "mod", "modid", "value")))
+                    parts.add(new NamespaceSelector<>(ns, itt::getId));
+                return combine(parts, CompositeASSelector.Mode.OR);
+            }, "namespace", "mod", "modid");
 
-        Map<String, MobCategory> mobCategoryMap = Map.of(
-                "isMonster", MobCategory.MONSTER,
-                "isCreature", MobCategory.CREATURE,
-                "isMisc", MobCategory.MISC,
-                "isWaterCreature", MobCategory.WATER_CREATURE
-        );
-        for (var entry : mobCategoryMap.entrySet())
-        {
-            TargetTypes.ENTITY.registerSelectorBuilder(50, (str, fileName) -> {
-                if (str.equals(entry.getKey()))
-                    return new IsMobCategorySelector(entry.getValue());
-                return null;
+            // "regex:.*_sword"
+            targetType.registerSelectorBuilder(99, (str, fileName) ->
+                    str.startsWith("regex:") ? RegexSelector.byId(str.substring("regex:".length()).trim(), itt::getId) : null);
+            // "@somemod" - everything that mod added.
+            targetType.registerSelectorBuilder(70, (str, fileName) ->
+                    str.startsWith("@") && str.length() > 1 ? new NamespaceSelector<>(str.substring(1).trim(), itt::getId) : null);
+            // A bare id is the last thing tried, so a string that is not one can still be claimed by a mod
+            // parser of its own rather than being turned into an id that matches nothing.
+            targetType.registerSelectorBuilder(Integer.MIN_VALUE, (str, fileName) -> {
+                var res = parseId(str, fileName);
+                return res == null ? null : new IdSelector<>(res, itt::getId);
             });
         }
 
-        TargetTypes.ENTITY.registerSelectorBuilder(50, (str, fileName) -> {
-            if (str.equals("isEnemy"))
-                return new IsEnemySelector();
-            return null;
+        // ---- tags ---------------------------------------------------------------------------------------
+        if (targetType instanceof RegistryTargetType)
+            setupTagSelectors(targetType, (RegistryTargetType<T, ?>) targetType);
+        else if (targetType instanceof IRegistryAssociatedTargetType && targetType instanceof SingletonTargetType)
+            registerTagSelectors(targetType, ((IRegistryAssociatedTargetType<T>) targetType).getRegistry(), v -> v);
+
+        // ---- nbt ----------------------------------------------------------------------------------------
+        if (targetType instanceof INBTSerializableTargetType)
+        {
+            var serializer = ((INBTSerializableTargetType<T>) targetType).getSerializer();
+            Function<T, CompoundTag> extractor = obj -> {
+                var tag = serializer.apply(obj);
+                return tag instanceof CompoundTag compound ? compound : new CompoundTag();
+            };
+
+            targetType.registerJsonSelector((obj, fileName) -> {
+                try {
+                    var nbt = JsonHelper.compound(JsonHelper.first(obj, "nbt", "tag", "data", "value"));
+                    return nbt == null ? null : new NbtSelector<>(nbt, extractor);
+                } catch (Exception e) {
+                    LOGGER.error("Could not read the nbt of a selector in file '{}':", fileName, e);
+                    return null;
+                }
+            }, "nbt", "data");
+
+            // "minecraft:diamond_sword{Damage:0}" - an optional selector, then SNBT.
+            targetType.registerSelectorBuilder(100, (str, fileName) -> {
+                var start = str.indexOf('{');
+                var end = str.lastIndexOf('}');
+                if (start == -1 || end <= start)
+                    return null;
+                var before = str.substring(0, start).trim();
+                var nbtPart = str.substring(start, end + 1);
+                ASSelector<T> beforeSelector = before.isEmpty() ? null : targetType.parseSelector(before, fileName);
+                if (beforeSelector == null && !before.isEmpty())
+                    return null;
+                try {
+                    ASSelector<T> nbtSelector = new NbtSelector<>(nbtPart, extractor);
+                    return beforeSelector == null
+                            ? nbtSelector
+                            : combine(List.of(beforeSelector, nbtSelector), CompositeASSelector.Mode.AND);
+                } catch (Exception ex) {
+                    LOGGER.error("Failed to parse NBT selector part '{}'", nbtPart, ex);
+                    return null;
+                }
+            });
+        }
+
+        // ---- data components ----------------------------------------------------------------------------
+        if (targetType instanceof IDataComponentHolderTargetType)
+        {
+            var holder = (IDataComponentHolderTargetType<T>) targetType;
+
+            targetType.registerJsonSelector((obj, fileName) -> {
+                List<ASSelector<T>> parts = new ArrayList<>();
+                for (var raw : JsonHelper.strings(JsonHelper.first(obj, "has_component", "component", "components", "value")))
+                {
+                    var type = componentType(raw);
+                    if (type == null)
+                    {
+                        LOGGER.warn("Unknown data component '{}' (file '{}')", raw, fileName);
+                        continue;
+                    }
+                    parts.add(new HasComponentSelector<>(type, holder::getDataComponentMap));
+                }
+                // Listing several means "has all of them", which is the useful reading.
+                return combine(parts, CompositeASSelector.Mode.AND);
+            }, "has_component", "component", "components");
+
+            targetType.registerSelectorBuilder(70, (str, fileName) -> {
+                if (!str.startsWith("component:"))
+                    return null;
+                var type = componentType(str.substring("component:".length()).trim());
+                return type == null ? null : new HasComponentSelector<>(type, holder::getDataComponentMap);
+            });
+
+            for (var entry : componentShorthands.entrySet())
+            {
+                final String name = entry.getKey();
+                final DataComponentType<?> type = entry.getValue();
+                targetType.registerSelectorBuilder(60, (str, fileName) ->
+                        str.equalsIgnoreCase(name) ? new HasComponentSelector<>(type, holder::getDataComponentMap) : null);
+                targetType.registerJsonSelector((obj, fileName) -> {
+                    var selector = new HasComponentSelector<T>(type, holder::getDataComponentMap);
+                    // {"isFood": false} reads as "and it must not be food".
+                    if (!JsonHelper.bool(obj, true, "value"))
+                        selector.inverted = true;
+                    return selector;
+                }, name.toLowerCase(Locale.ROOT));
+            }
+        }
+    }
+
+    /** Captures the registry element type, so the tag selector can be built without raw types. */
+    private <T, S> void setupTagSelectors(TargetType<T, ?> targetType, RegistryTargetType<T, S> registryTarget)
+    {
+        registerTagSelectors(targetType, registryTarget.getRegistry(), registryTarget::getSingleton);
+    }
+
+    private <T, S> void registerTagSelectors(TargetType<T, ?> targetType, Registry<S> registry, Function<T, S> singletonGetter)
+    {
+        targetType.registerJsonSelector((obj, fileName) -> {
+            List<ASSelector<T>> parts = new ArrayList<>();
+            for (var raw : JsonHelper.strings(JsonHelper.first(obj, "tag", "tags", "value")))
+            {
+                var res = ResourceLocation.tryParse(raw.startsWith("#") ? raw.substring(1) : raw);
+                if (res == null)
+                {
+                    LOGGER.warn("'{}' is not a valid tag id (file '{}')", raw, fileName);
+                    continue;
+                }
+                parts.add(new TagSelector<>(res, registry, singletonGetter));
+            }
+            return combine(parts, CompositeASSelector.Mode.OR);
+        }, "tag", "tags");
+
+        targetType.registerSelectorBuilder(50, (str, fileName) -> {
+            if (!str.startsWith("#"))
+                return null;
+            var res = ResourceLocation.tryParse(str.substring(1).trim());
+            return res == null ? null : new TagSelector<>(res, registry, singletonGetter);
         });
     }
+
+    /** Selectors that only make sense for a living entity. */
+    private void setupEntitySelectors()
+    {
+        var entity = TargetTypes.ENTITY;
+
+        // Every vanilla category gets its own `isX` word, rather than the handful that used to be hardcoded.
+        for (var category : MobCategory.values())
+        {
+            final MobCategory value = category;
+            final String shorthand = "is" + camelCase(category.getName());
+            entity.registerSelectorBuilder(50, (str, fileName) ->
+                    str.equalsIgnoreCase(shorthand) ? new IsMobCategorySelector(value) : null);
+        }
+        entity.registerJsonSelector((obj, fileName) -> {
+            List<ASSelector<LivingEntity>> parts = new ArrayList<>();
+            for (var raw : JsonHelper.strings(JsonHelper.first(obj, "mob_category", "category", "value")))
+            {
+                var category = mobCategory(raw);
+                if (category == null)
+                {
+                    LOGGER.warn("Unknown mob category '{}' (file '{}')", raw, fileName);
+                    continue;
+                }
+                parts.add(new IsMobCategorySelector(category));
+            }
+            return combine(parts, CompositeASSelector.Mode.OR);
+        }, "mob_category", "category");
+
+        entity.registerSelectorBuilder(50, (str, fileName) ->
+                str.equalsIgnoreCase("isEnemy") ? new IsEnemySelector() : null);
+        entity.registerJsonSelector((obj, fileName) -> {
+            var selector = new IsEnemySelector();
+            if (!JsonHelper.bool(obj, true, "value"))
+                selector.inverted = true;
+            return selector;
+        }, "is_enemy", "isenemy", "enemy");
+    }
+
+    /**
+     * Selectors that only make sense for a recipe. The identifiable ones (by recipe id, regex, namespace, and
+     * the boolean combinators) come for free from {@link #setupSelectorsFor}; these three add the rest:
+     * matching by recipe type, by an ingredient the recipe accepts, and by the recipe's result. The
+     * ingredient/result matchers take a full <em>item</em> selector, parsed by the item target, so anything you
+     * can write to pick an item (id, {@code #tag}, {@code regex:}, ...) works to pick which recipes to touch.
+     */
+    private void setupRecipeSelectors()
+    {
+        var recipe = TargetTypes.RECIPE;
+
+        // recipe_type: an exact type id ("minecraft:smelting"), or a regex against the type id.
+        recipe.registerJsonSelector((obj, fileName) -> {
+            var pattern = JsonHelper.string(obj, null, "regex", "pattern");
+            if (pattern != null)
+                return RecipeTypeSelector.regex(pattern, JsonHelper.bool(obj, false, "ignore_case", "ignorecase"));
+            var raw = JsonHelper.string(obj, null, "value", "recipe_type", "type_id", "id");
+            if (raw == null)
+                return null;
+            var res = ResourceLocation.tryParse(raw);
+            return res == null ? null : RecipeTypeSelector.exact(res);
+            // Not aliased to "type": that key is the reserved selector-type discriminator on a selector object.
+        }, "recipe_type");
+        recipe.registerJsonSelector((obj, fileName) -> {
+            var pattern = JsonHelper.string(obj, null, "value", "regex", "pattern");
+            return pattern == null ? null : RecipeTypeSelector.regex(pattern, JsonHelper.bool(obj, false, "ignore_case", "ignorecase"));
+        }, "recipe_type_regex", "type_regex");
+        // "type:minecraft:smelting"
+        recipe.registerSelectorBuilder(60, (str, fileName) -> {
+            if (!str.startsWith("type:"))
+                return null;
+            var res = ResourceLocation.tryParse(str.substring("type:".length()).trim());
+            return res == null ? null : RecipeTypeSelector.exact(res);
+        });
+
+        // contains_ingredient / contains_result: the value is a full item selector.
+        recipe.registerJsonSelector((obj, fileName) -> {
+            var itemSelector = TargetTypes.ITEM.parseSelector(JsonHelper.first(obj, "value", "contains_ingredient", "ingredient", "input"), fileName);
+            return itemSelector == null ? null : new IngredientSelector(itemSelector);
+        }, "contains_ingredient", "ingredient", "input");
+        recipe.registerJsonSelector((obj, fileName) -> {
+            var itemSelector = TargetTypes.ITEM.parseSelector(JsonHelper.first(obj, "value", "contains_result", "result", "output"), fileName);
+            return itemSelector == null ? null : new ResultSelector(itemSelector);
+        }, "contains_result", "result", "output");
+        // "ingredient:#minecraft:planks", "result:minecraft:diamond" - everything after the prefix is an item
+        // selector in its own right, so it can itself be a tag, a regex, and so on.
+        recipe.registerSelectorBuilder(60, (str, fileName) -> {
+            if (!str.startsWith("ingredient:"))
+                return null;
+            var itemSelector = TargetTypes.ITEM.parseSelector(str.substring("ingredient:".length()).trim(), fileName);
+            return itemSelector == null ? null : new IngredientSelector(itemSelector);
+        });
+        recipe.registerSelectorBuilder(60, (str, fileName) -> {
+            if (!str.startsWith("result:"))
+                return null;
+            var itemSelector = TargetTypes.ITEM.parseSelector(str.substring("result:".length()).trim(), fileName);
+            return itemSelector == null ? null : new ResultSelector(itemSelector);
+        });
+    }
+
+    /** ANDs/ORs a list of selectors, collapsing the one-element case so simple entries stay simple. */
+    private static <T> ASSelector<T> combine(List<ASSelector<T>> parts, CompositeASSelector.Mode mode)
+    {
+        if (parts.isEmpty())
+            return null;
+        if (parts.size() == 1)
+            return parts.get(0);
+        return new CompositeASSelector<>(parts, mode);
+    }
+
+    private static <T> List<ASSelector<T>> parseSelectorList(TargetType<T, ?> targetType, JsonElement element, String fileName)
+    {
+        List<ASSelector<T>> parts = new ArrayList<>();
+        for (var item : JsonHelper.list(element))
+        {
+            var parsed = targetType.parseSelector(item, fileName);
+            if (parsed != null)
+                parts.add(parsed);
+        }
+        return parts;
+    }
+
+    /** Reads an id, defaulting the namespace to the name of the file it was written in. Never throws. */
+    private static ResourceLocation parseId(String str, String fallbackNamespace)
+    {
+        var namespace = fallbackNamespace;
+        var path = str;
+        int colon = str.indexOf(':');
+        if (colon >= 0)
+        {
+            namespace = str.substring(0, colon);
+            path = str.substring(colon + 1);
+        }
+        return ResourceLocation.tryBuild(namespace, path);
+    }
+
+    private static DataComponentType<?> componentType(String raw)
+    {
+        var res = ResourceLocation.tryParse(raw);
+        return res == null ? null : BuiltInRegistries.DATA_COMPONENT_TYPE.get(res);
+    }
+
+    private static MobCategory mobCategory(String raw)
+    {
+        for (var category : MobCategory.values())
+        {
+            if (category.getName().equalsIgnoreCase(raw) || category.name().equalsIgnoreCase(raw))
+                return category;
+        }
+        return null;
+    }
+
+    /** water_creature -> WaterCreature */
+    private static String camelCase(String snake)
+    {
+        var out = new StringBuilder();
+        for (var word : snake.split("_"))
+        {
+            if (word.isEmpty())
+                continue;
+            out.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return out.toString();
+    }
+
     private static boolean isRemoveOperation(com.google.gson.JsonObject obj)
     {
         var opElement = obj.get("operation");
@@ -592,17 +864,9 @@ public class Attributesetter {
 
     private static UniqueRegistry.Rule parseUniqueRule(com.google.gson.JsonObject obj, String id, boolean shared)
     {
-        var limitElement = obj.get("limit");
-        if (limitElement == null)
-            limitElement = obj.get("count");
-        if (limitElement == null)
-            limitElement = obj.get("max");
-        if (limitElement == null)
-        {
-            Attributesetter.LOGGER.error("Missing limit for make_unique entry {}", id);
-            return null;
-        }
-        int limit = Math.max(0, limitElement.getAsInt());
+        var limitElement = JsonHelper.first(obj, "limit", "count", "max", "value");
+        // A make_unique with no limit written down means exactly one, which is what the name promises.
+        int limit = limitElement == null ? 1 : Math.max(0, limitElement.getAsInt());
         boolean broadcast = obj.has("broadcast") ? obj.get("broadcast").getAsBoolean() : Config.broadcastByDefault();
         String message = obj.has("message") ? obj.get("message").getAsString() : null;
         return new UniqueRegistry.Rule(limit, shared ? id : null, broadcast, message);
@@ -638,6 +902,8 @@ public class Attributesetter {
                 return null;
             return new EntityRemoveSetter();
         });
+
+        setupRecipeSetters();
 
         // Unique: caps how many copies of an item/entity may ever be created in the save. Same folders as removal.
         // `make_unique` caps each matched type on its own; `make_unique_shared` pools every type the one entry
@@ -676,11 +942,7 @@ public class Attributesetter {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("replace"))
                 return null;
-            var withElement = obj.get("with");
-            if (withElement == null)
-                withElement = obj.get("to");
-            if (withElement == null)
-                withElement = obj.get("block");
+            var withElement = JsonHelper.first(obj, "with", "to", "block", "value");
             if (withElement == null)
             {
                 Attributesetter.LOGGER.error("Missing 'with' block for block replace setter in entry {}", id);
@@ -700,6 +962,9 @@ public class Attributesetter {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("hardness"))
                 return null;
+            var flat = JsonHelper.first(obj, "value", "hardness");
+            if (flat != null && !JsonHelper.hasAny(obj, "multiplier", "offset"))
+                return BlockHardnessSetter.absolute(flat.getAsFloat());
             return new BlockHardnessSetter(getMultiplier(obj), getOffset(obj));
         });
         TargetTypes.BLOCK.registerSetterBuilder(1, (obj, id, selector) -> {
@@ -709,6 +974,9 @@ public class Attributesetter {
             var op = opElement.getAsString();
             if (!op.equalsIgnoreCase("explosion_resistance") && !op.equalsIgnoreCase("blast_resistance"))
                 return null;
+            var flat = JsonHelper.first(obj, "value", "resistance");
+            if (flat != null && !JsonHelper.hasAny(obj, "multiplier", "offset"))
+                return BlockExplosionResistanceSetter.absolute(flat.getAsFloat());
             return new BlockExplosionResistanceSetter(getMultiplier(obj), getOffset(obj));
         });
         TargetTypes.BLOCK.registerSetterBuilder(1, (obj, id, selector) -> {
@@ -718,6 +986,9 @@ public class Attributesetter {
             var op = opElement.getAsString();
             if (!op.equalsIgnoreCase("mining_speed") && !op.equalsIgnoreCase("break_speed"))
                 return null;
+            var flat = JsonHelper.first(obj, "value", "speed");
+            if (flat != null && !JsonHelper.hasAny(obj, "multiplier", "offset"))
+                return BlockMiningSpeedSetter.absolute(flat.getAsFloat());
             return new BlockMiningSpeedSetter(getMultiplier(obj), getOffset(obj));
         });
 
@@ -784,7 +1055,7 @@ public class Attributesetter {
             if (!op.equalsIgnoreCase("creeper_explosion_power") && !op.equalsIgnoreCase("explosion_power"))
                 return null;
 
-            var powerElement = obj.get("power");
+            var powerElement = JsonHelper.first(obj, "power", "value");
             if (powerElement != null)
                 return new CreeperExplosionPowerSetter(powerElement.getAsInt());
 
@@ -796,28 +1067,21 @@ public class Attributesetter {
             return null;
         });
 
-        // Durability
+        // Durability and stack size: a flat value, a multiplier, or an offset on top of either.
         TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("durability"))
                 return null;
-            var valueElement = obj.get("value");
-            if (valueElement == null)
-                return null;
-            return new ItemDurabilitySetter(valueElement.getAsInt());
-        });
-
-        TargetTypes.ITEM.registerSetterBuilder(1, (obj, id, selector) -> {
-            var opElement = obj.get("operation");
-            if (opElement == null || !opElement.getAsString().equalsIgnoreCase("durability"))
-                return null;
-            var valueElement = obj.get("value");
+            var valueElement = JsonHelper.first(obj, "value", "durability");
             var multiplierElement = obj.get("multiplier");
+            int offset = JsonHelper.integer(obj, 0, "offset");
             if (valueElement != null)
-                return new ItemDurabilitySetter(valueElement.getAsInt());
+                return new ItemDurabilitySetter(valueElement.getAsInt()).offset(offset);
             if (multiplierElement != null)
-                return new ItemDurabilitySetter(multiplierElement.getAsFloat());
-            Attributesetter.LOGGER.error("Missing value or multiplier for durability setter in entry {}", id);
+                return new ItemDurabilitySetter(multiplierElement.getAsFloat()).offset(offset);
+            if (offset != 0)
+                return new ItemDurabilitySetter(0).offset(offset);
+            Attributesetter.LOGGER.error("Missing value, multiplier or offset for durability setter in entry {}", id);
             return null;
         });
 
@@ -825,13 +1089,16 @@ public class Attributesetter {
             var opElement = obj.get("operation");
             if (opElement == null || !opElement.getAsString().equalsIgnoreCase("max_stack"))
                 return null;
-            var valueElement = obj.get("value");
+            var valueElement = JsonHelper.first(obj, "value", "max_stack", "size");
             var multiplierElement = obj.get("multiplier");
+            int offset = JsonHelper.integer(obj, 0, "offset");
             if (valueElement != null)
-                return new ItemMaxStackSetter(valueElement.getAsInt());
+                return new ItemMaxStackSetter(valueElement.getAsInt()).offset(offset);
             if (multiplierElement != null)
-                return new ItemMaxStackSetter(multiplierElement.getAsFloat());
-            Attributesetter.LOGGER.error("Missing value or multiplier for max stack size setter in entry {}", id);
+                return new ItemMaxStackSetter(multiplierElement.getAsFloat()).offset(offset);
+            if (offset != 0)
+                return new ItemMaxStackSetter(0).offset(offset);
+            Attributesetter.LOGGER.error("Missing value, multiplier or offset for max stack size setter in entry {}", id);
             return null;
         });
 
@@ -1191,7 +1458,7 @@ public class Attributesetter {
             if (!opStr.equalsIgnoreCase("inject") && !opStr.equalsIgnoreCase("injection") && !opStr.equalsIgnoreCase("attribute_injection"))
                 return null;
 
-            var sourceElement = obj.get("source");
+            var sourceElement = JsonHelper.first(obj, "source", "from", "value");
             if (sourceElement == null)
             {
                 Attributesetter.LOGGER.error("Missing source for attribute injection in entry {}", id);
@@ -1304,29 +1571,310 @@ public class Attributesetter {
         });
     }
 
+    /**
+     * Recipe operations: {@code remove} drops the recipe, {@code replace_result} swaps its output for a fixed
+     * item, {@code replace_ingredient} swaps every ingredient matching an item selector for a fixed ingredient.
+     */
+    private void setupRecipeSetters()
+    {
+        TargetTypes.RECIPE.registerSetterBuilder(2, (obj, id, selector) ->
+                isRemoveOperation(obj) ? new RecipeRemoveSetter() : null);
+
+        TargetTypes.RECIPE.registerSetterBuilder(1, (obj, id, selector) -> {
+            var op = JsonHelper.string(obj, "", "operation");
+            if (!op.equalsIgnoreCase("replace_result") && !op.equalsIgnoreCase("replaceresult") && !op.equalsIgnoreCase("result"))
+                return null;
+            var spec = JsonHelper.first(obj, "with", "to", "result", "item", "value");
+            if (spec == null)
+            {
+                LOGGER.error("Missing 'with' item for replace_result in entry {}", id);
+                return null;
+            }
+            var stack = parseResultStack(spec, JsonHelper.integer(obj, 1, "count", "amount"), id);
+            return stack == null ? null : new RecipeReplaceResultSetter(stack);
+        });
+
+        TargetTypes.RECIPE.registerSetterBuilder(1, (obj, id, selector) -> {
+            var op = JsonHelper.string(obj, "", "operation");
+            if (!op.equalsIgnoreCase("replace_ingredient") && !op.equalsIgnoreCase("replaceingredient"))
+                return null;
+
+            // Which ingredients to replace is written exactly like a contains_ingredient selector.
+            var matchElement = JsonHelper.first(obj, "match", "from", "ingredient", "target", "replace");
+            if (matchElement == null)
+            {
+                LOGGER.error("Missing 'match' item selector for replace_ingredient in entry {}", id);
+                return null;
+            }
+            var matchSelector = TargetTypes.ITEM.parseSelector(matchElement, id);
+            if (matchSelector == null)
+            {
+                LOGGER.error("Could not parse the 'match' item selector for replace_ingredient in entry {}", id);
+                return null;
+            }
+
+            var withElement = JsonHelper.first(obj, "with", "to", "replacement");
+            if (withElement == null)
+            {
+                LOGGER.error("Missing 'with' ingredient for replace_ingredient in entry {}", id);
+                return null;
+            }
+            var replacement = parseIngredient(withElement, id);
+            return replacement == null ? null : new RecipeReplaceIngredientSetter(matchSelector, replacement);
+        });
+
+        // "replace_result minecraft:diamond" - the generic expansion already lands the item in `value`, so the
+        // builder above reads it. "replace_ingredient <match> <with>" needs two positional args, so it's its own.
+        TargetTypes.RECIPE.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("replace_ingredient", "replaceingredient"))
+                return null;
+            if (shorthand.arg(0) == null || shorthand.arg(1) == null)
+            {
+                LOGGER.error("Setter shorthand '{}' needs an ingredient to match and one to replace it with (entry {})", shorthand.raw, id);
+                return null;
+            }
+            var obj = shorthand.base();
+            obj.addProperty("operation", "replace_ingredient");
+            obj.addProperty("match", shorthand.arg(0));
+            obj.addProperty("with", shorthand.arg(1));
+            return obj;
+        });
+    }
+
+    /** Reads a result item from an id string (with optional components) or a {@code {"item": ...}} object. */
+    private static ItemStack parseResultStack(JsonElement element, int count, String id)
+    {
+        String spec;
+        if (element.isJsonObject())
+            spec = JsonHelper.string(element.getAsJsonObject(), null, "item", "id");
+        else if (element.isJsonPrimitive())
+            spec = element.getAsString();
+        else
+            spec = null;
+        if (spec == null)
+        {
+            Attributesetter.LOGGER.error("Could not read a result item from {} in entry {}", element, id);
+            return null;
+        }
+        try {
+            ItemParser parser = new ItemParser(HolderLookup.Provider.create(Stream.of(BuiltInRegistries.REGISTRY.asLookup())));
+            ItemResult result = parser.parse(new StringReader(spec));
+            return new ItemStack(result.item(), Math.max(1, count), result.components());
+        } catch (CommandSyntaxException e) {
+            Attributesetter.LOGGER.error("Could not parse result item '{}' in entry {}", spec, id, e);
+            return null;
+        }
+    }
+
+    /** Reads an ingredient from {@code "#tag"} / {@code "item"}, or an array of either. */
+    private static net.minecraft.world.item.crafting.Ingredient parseIngredient(JsonElement element, String id)
+    {
+        List<net.minecraft.world.item.crafting.Ingredient> parts = new ArrayList<>();
+        for (var raw : JsonHelper.strings(element))
+        {
+            var ingredient = parseSingleIngredient(raw, id);
+            if (ingredient != null)
+                parts.add(ingredient);
+        }
+        if (parts.isEmpty())
+        {
+            Attributesetter.LOGGER.error("Could not read a replacement ingredient from {} in entry {}", element, id);
+            return null;
+        }
+        if (parts.size() == 1)
+            return parts.get(0);
+        // A list of ingredients means "any of these", which is one ingredient accepting every listed item.
+        return net.minecraft.world.item.crafting.Ingredient.fromValues(
+                parts.stream().flatMap(ing -> java.util.Arrays.stream(ing.getValues())));
+    }
+
+    private static net.minecraft.world.item.crafting.Ingredient parseSingleIngredient(String raw, String id)
+    {
+        if (raw.startsWith("#"))
+        {
+            var res = ResourceLocation.tryParse(raw.substring(1).trim());
+            if (res == null)
+            {
+                Attributesetter.LOGGER.error("Invalid ingredient tag '{}' in entry {}", raw, id);
+                return null;
+            }
+            return net.minecraft.world.item.crafting.Ingredient.of(
+                    net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, res));
+        }
+        var res = ResourceLocation.tryParse(raw.trim());
+        if (res == null)
+        {
+            Attributesetter.LOGGER.error("Invalid ingredient item '{}' in entry {}", raw, id);
+            return null;
+        }
+        var item = BuiltInRegistries.ITEM.getOptional(res).orElse(null);
+        if (item == null)
+        {
+            Attributesetter.LOGGER.error("Unknown ingredient item '{}' in entry {}", raw, id);
+            return null;
+        }
+        return net.minecraft.world.item.crafting.Ingredient.of(item);
+    }
+
+    /**
+     * Setters written as a plain string instead of an object.
+     *
+     * <p>Most operations need nothing registered here: the generic expansion in {@link TargetType} already
+     * turns {@code "remove"} into {@code {"operation": "remove"}}, {@code "durability 500"} into
+     * {@code {"operation": "durability", "value": 500}}, {@code "hardness x0.5"} into a multiplier and
+     * {@code "max_stack +8"} into an offset, and copies any {@code key=value} token straight through. What is
+     * registered here are the operations whose arguments do not line up with that.
+     */
+    private void setupSetterShorthands()
+    {
+        // "remove_food" - reads better than `food remove=true`.
+        TargetTypes.ITEM.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("remove_food", "food_remove", "nofood"))
+                return null;
+            var obj = new JsonObject();
+            obj.addProperty("operation", "food");
+            obj.addProperty("remove", true);
+            return obj;
+        });
+
+        // "attribute <id> <amount> [operation]", where a leading + or % on the amount picks the operation:
+        //   attribute minecraft:generic.max_health 40      -> whatever the target defaults to
+        //   attribute minecraft:generic.attack_damage +5   -> add
+        //   attribute minecraft:generic.armor %0.25        -> multiply_base
+        //   attribute minecraft:generic.armor 0.25 multiply_total slot=chest
+        for (var target : List.of(TargetTypes.ENTITY, TargetTypes.ITEMSTACK))
+        {
+            target.registerSetterShorthand(10, (shorthand, id) -> {
+                if (!shorthand.opIs("attribute", "attr"))
+                    return null;
+                var attribute = shorthand.arg(0);
+                if (attribute == null)
+                {
+                    LOGGER.error("Setter shorthand '{}' needs an attribute (entry {})", shorthand.raw, id);
+                    return null;
+                }
+
+                var amount = shorthand.arg(1);
+                String operation = shorthand.arg(2);
+                var obj = shorthand.base();
+                // `+5` is read as an offset by the tokenizer, which is exactly the value we want here.
+                if (amount == null && shorthand.offset != null)
+                {
+                    amount = String.valueOf(shorthand.offset);
+                    if (operation == null)
+                        operation = "add";
+                }
+                else if (amount != null && amount.startsWith("%"))
+                {
+                    amount = amount.substring(1);
+                    if (operation == null)
+                        operation = "multiply_base";
+                }
+                obj.remove("offset");
+
+                if (amount == null)
+                {
+                    LOGGER.error("Setter shorthand '{}' needs an amount (entry {})", shorthand.raw, id);
+                    return null;
+                }
+                obj.addProperty("attribute", attribute);
+                obj.add("value", JsonHelper.typed(amount));
+                if (operation != null)
+                    obj.addProperty("operation", operation);
+                else
+                    // No operation written: let the target type apply its own default (base for entities, a
+                    // plain additive modifier for item stacks).
+                    obj.remove("operation");
+                return obj;
+            });
+        }
+
+        // "tooltip <the whole rest of the line>"
+        TargetTypes.ITEMSTACK.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("tooltip", "tooltip_add", "tooltipadd"))
+                return null;
+            if (shorthand.rest.isEmpty())
+            {
+                LOGGER.error("Setter shorthand '{}' needs some text (entry {})", shorthand.raw, id);
+                return null;
+            }
+            var obj = new JsonObject();
+            obj.addProperty("operation", "tooltip_add");
+            obj.addProperty("tooltip", shorthand.rest);
+            return obj;
+        });
+
+        // "tooltip_remove [index]"
+        TargetTypes.ITEMSTACK.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("tooltip_remove", "remove_tooltip"))
+                return null;
+            var obj = new JsonObject();
+            obj.addProperty("operation", "tooltip_modify");
+            obj.addProperty("type", "REMOVE");
+            obj.add("index", JsonHelper.typed(shorthand.arg(0) == null ? "0" : shorthand.arg(0)));
+            return obj;
+        });
+
+        // "dependency <attribute> <the attribute it scales with> x<multiplier>"
+        TargetTypes.ITEMSTACK.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("dependency", "depends_on"))
+                return null;
+            if (shorthand.arg(0) == null || shorthand.arg(1) == null)
+            {
+                LOGGER.error("Setter shorthand '{}' needs two attributes (entry {})", shorthand.raw, id);
+                return null;
+            }
+            var obj = shorthand.base();
+            obj.addProperty("operation", "dependency");
+            obj.addProperty("attribute", shorthand.arg(0));
+            obj.addProperty("dependency", shorthand.arg(1));
+            return obj;
+        });
+
+        // "conversion <from> <to> [amount] [rate]"
+        TargetTypes.ITEMSTACK.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("conversion", "convert"))
+                return null;
+            if (shorthand.arg(0) == null || shorthand.arg(1) == null)
+            {
+                LOGGER.error("Setter shorthand '{}' needs a source and a target attribute (entry {})", shorthand.raw, id);
+                return null;
+            }
+            var obj = shorthand.base();
+            obj.addProperty("operation", "conversion");
+            obj.addProperty("from", shorthand.arg(0));
+            obj.addProperty("attribute", shorthand.arg(1));
+            if (shorthand.arg(2) != null)
+                obj.add("amount", JsonHelper.typed(shorthand.arg(2)));
+            if (shorthand.arg(3) != null)
+                obj.add("rate", JsonHelper.typed(shorthand.arg(3)));
+            return obj;
+        });
+
+        // "inject <source attribute> [x<multiplier>] [type=...]"
+        TargetTypes.ATTRIBUTE.registerSetterShorthand(10, (shorthand, id) -> {
+            if (!shorthand.opIs("inject", "injection", "attribute_injection"))
+                return null;
+            if (shorthand.arg(0) == null)
+            {
+                LOGGER.error("Setter shorthand '{}' needs a source attribute (entry {})", shorthand.raw, id);
+                return null;
+            }
+            var obj = shorthand.base();
+            obj.addProperty("operation", "inject");
+            obj.addProperty("source", shorthand.arg(0));
+            return obj;
+        });
+    }
+
     private EquipmentSlot parseItemSlot(JsonElement slotElement, String id, ASSelector<ItemStack> selector)
     {
         if (slotElement == null)
         {
-            IdSelector<?> idSelector;
-            if (selector instanceof IdSelector<?> iis)
-                idSelector = iis;
-            else if (selector instanceof CompositeASSelector<?> cas)
-            {
-                IdSelector<?> found = null;
-                for (var selObj : cas.selectors)
-                {
-                    if (selObj instanceof IdSelector<?> iis2)
-                    {
-                        found = iis2;
-                        break;
-                    }
-                }
-                idSelector = found;
-            }
-            else
-                idSelector = null;
-
+            // No slot written down: if the entry is about one specific item and that item is armour, the slot
+            // it goes in is the only sensible reading. find() looks through composites and projections, so it
+            // works whatever shape the selector was written in.
+            IdSelector<?> idSelector = selector == null ? null : selector.find(IdSelector.class);
             if (idSelector != null)
             {
                 var itemEntry = BuiltInRegistries.ITEM.get(idSelector.id);

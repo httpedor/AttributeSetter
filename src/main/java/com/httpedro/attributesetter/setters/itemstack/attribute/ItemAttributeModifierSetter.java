@@ -20,7 +20,7 @@ public class ItemAttributeModifierSetter extends ItemStackAttributeSetter {
     }
     
     @Override
-    public void apply(ItemAttributeModifierEvent e)
+    protected void applyModifiers(ItemAttributeModifierEvent e)
     {
         e.removeModifier(attribute, modifier.id());
         e.addModifier(attribute, modifier, EquipmentSlotGroup.bySlot(slot));

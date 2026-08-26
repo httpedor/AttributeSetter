@@ -20,6 +20,11 @@ public class EntityTargetType extends RegistryTargetType<LivingEntity, EntityTyp
 	}
 
 	@Override
+	public java.util.List<String> getFolderAliases() {
+	    return java.util.List.of("entities");
+	}
+
+	@Override
     public EntityType<?> getSingleton(LivingEntity instance) {
         return instance.getType();
     }

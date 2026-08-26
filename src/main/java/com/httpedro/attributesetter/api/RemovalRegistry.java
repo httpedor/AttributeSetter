@@ -39,6 +39,18 @@ public class RemovalRegistry {
         registries = access;
     }
 
+    /** The recipe manager being built by the current reload, or {@code null} on a client. */
+    public static RecipeManager getRecipeManager()
+    {
+        return recipeManager;
+    }
+
+    /** The current reload's registry access, or {@code null} on a client. */
+    public static HolderLookup.Provider getRegistries()
+    {
+        return registries;
+    }
+
     public static void clear()
     {
         removedItems.clear();

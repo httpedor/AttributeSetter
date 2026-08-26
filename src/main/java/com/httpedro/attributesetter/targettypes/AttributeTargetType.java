@@ -19,6 +19,11 @@ public class AttributeTargetType extends SingletonTargetType<Attribute> implemen
     }
 
     @Override
+    public java.util.List<String> getFolderAliases() {
+        return java.util.List.of("attributes");
+    }
+
+    @Override
     public ResourceLocation getId(Attribute obj) {
         return BuiltInRegistries.ATTRIBUTE.getKey(obj);
     }

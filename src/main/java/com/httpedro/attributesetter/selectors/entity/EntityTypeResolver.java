@@ -1,11 +1,14 @@
 package com.httpedro.attributesetter.selectors.entity;
 
 import com.httpedro.attributesetter.selectors.ASSelector;
+import com.httpedro.attributesetter.selectors.AlwaysSelector;
 import com.httpedro.attributesetter.selectors.CompositeASSelector;
 import com.httpedro.attributesetter.selectors.IdSelector;
+import com.httpedro.attributesetter.selectors.NamespaceSelector;
 import com.httpedro.attributesetter.selectors.RegexSelector;
 import com.httpedro.attributesetter.selectors.TagSelector;
 
+import com.httpedro.attributesetter.util.RegistryValues;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EntityType;
@@ -52,13 +55,29 @@ public class EntityTypeResolver {
             return invert(composite, composite.mode == CompositeASSelector.Mode.AND);
         }
 
+        if (selector instanceof AlwaysSelector<LivingEntity> alwaysSelector)
+            return invert(alwaysSelector, true);
+
         if (selector instanceof IdSelector<LivingEntity> idSelector)
             return invert(idSelector, idSelector.id.equals(BuiltInRegistries.ENTITY_TYPE.getKey(type)));
+
+        if (selector instanceof NamespaceSelector<LivingEntity> namespaceSelector)
+        {
+            var key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+            return invert(namespaceSelector, key != null && key.getNamespace().equals(namespaceSelector.namespace));
+        }
 
         if (selector instanceof RegexSelector<LivingEntity> regexSelector)
         {
             var key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-            return invert(regexSelector, key != null && key.toString().matches(regexSelector.regex));
+            if (key == null)
+                return invert(regexSelector, false);
+            var text = switch (regexSelector.part) {
+                case PATH -> key.getPath();
+                case NAMESPACE -> key.getNamespace();
+                default -> key.toString();
+            };
+            return invert(regexSelector, regexSelector.pattern.matcher(text).matches());
         }
 
         if (selector instanceof TagSelector<?, ?> tagSelector)
@@ -77,7 +96,7 @@ public class EntityTypeResolver {
     public static Set<EntityType<?>> resolve(ASSelector<LivingEntity> selector)
     {
         Set<EntityType<?>> types = new HashSet<>();
-        for (var type : BuiltInRegistries.ENTITY_TYPE)
+        for (var type : RegistryValues.of(BuiltInRegistries.ENTITY_TYPE))
         {
             var result = matches(selector, type);
             if (result != null && result)

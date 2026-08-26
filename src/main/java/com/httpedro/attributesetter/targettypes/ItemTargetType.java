@@ -22,6 +22,11 @@ public class ItemTargetType extends SingletonTargetType<Item> implements IIdenti
     }
 
     @Override
+    public java.util.List<String> getFolderAliases() {
+        return java.util.List.of("item_types", "itemtype");
+    }
+
+    @Override
     public ResourceLocation getId(Item obj) {
         return BuiltInRegistries.ITEM.getKey(obj);
     }

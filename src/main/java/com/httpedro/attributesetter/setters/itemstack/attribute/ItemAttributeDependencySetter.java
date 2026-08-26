@@ -23,7 +23,7 @@ public class ItemAttributeDependencySetter extends ItemStackAttributeSetter {
     }
 
     @Override
-    public void apply(ItemAttributeModifierEvent e) {
+    protected void applyModifiers(ItemAttributeModifierEvent e) {
         if (multiplier == 0)
             return;
         var modifiers = new ArrayList<ItemAttributeModifiers.Entry>();

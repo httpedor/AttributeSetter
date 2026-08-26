@@ -1,6 +1,8 @@
 # AttributeSetter Usage Guide
 
-This guide documents the datapack format and selectors based on the current builders in `Attributesetter.setupSelectors`, `Attributesetter.setupSetters`, and `CuriosCompat`.
+This guide documents the datapack format and selectors based on the current builders in
+`Attributesetter.setupSelectors`, `Attributesetter.setupSetters`, `Attributesetter.setupSetterShorthands`, and
+`CuriosCompat`.
 
 ## Datapack Structure
 
@@ -10,15 +12,22 @@ All data lives under the `attributesetter` root inside a datapack:
 data/<namespace>/attributesetter/<folder>/<file>.json
 ```
 
-Each `<folder>` corresponds to a `TargetType` folder name:
+Each `<folder>` picks what the file is about:
 
 - `entity` (living entities)
-- `item` (item stacks / attribute modifiers)
-- `item_type` (item type changes like durability/food/max stack)
+- `item` (everything about items: attribute modifiers, tooltips, durability, food, stack size, ...)
+- `block` (hardness, blast resistance, mining speed, remove/replace)
+- `recipe` (remove a recipe, or rewrite its result / ingredients)
 - `attribute` (attribute-to-attribute injections)
-- `block` (block changes like hardness, blast resistance, mining speed, remove/replace)
 
-Each JSON file is an object where keys are selectors and values are arrays of entries:
+`item_type` still works and still means "item-level only", but you no longer need it: the `item` folder
+accepts both the per-stack operations (attribute modifiers, tooltips) and the per-item ones (durability, food,
+stack size). Each setter is handed to whichever of the two understands it. Plurals also work as folder names
+(`entities`, `items`, `blocks`, `recipes`, `attributes`).
+
+### File layout
+
+The usual layout is an object whose keys are selectors:
 
 ```json
 {
@@ -28,52 +37,193 @@ Each JSON file is an object where keys are selectors and values are arrays of en
 }
 ```
 
-Selector keys are parsed using the rules below. The filename provides the default namespace for selectors that omit one.
+Three shortenings apply everywhere a list of setters is expected — the value on a plain selector key, and the
+`setters` field of an entry object below:
+
+- a single setter does not need to be wrapped in an array — `"minecraft:creeper": { ... }`,
+- a setter can be written as a string — `"minecraft:stone_sword": "remove"` (see [Setter shorthands](#setter-shorthands)),
+- a selector can be a JSON object rather than a string (see [Selectors](#selectors)).
+
+Because JSON keys have to be strings, a selector written as an object needs somewhere else to live. Either give
+the entry a `selector` field, in which case the key becomes a plain label:
+
+```json
+{
+  "cheap ores": {
+    "selector": { "tag": "c:ores", "namespace": "minecraft" },
+    "setters": [ "hardness x0.5" ]
+  }
+}
+```
+
+or write the whole file as an array of entries:
+
+```json
+[
+  {
+    "selector": { "any": ["#c:ores", "regex:.*_ore"] },
+    "setters": "hardness x0.5"
+  },
+  {
+    "name": "flat obsidian",
+    "selector": "minecraft:obsidian",
+    "setters": { "operation": "hardness", "value": 5 }
+  }
+]
+```
+
+`selector` also accepts `select` / `target`, and `setters` also accepts `apply` / `modifiers` / `operations`.
+`setters` follows the same "single value doesn't need an array" rule as everything else — a lone setter object
+(`{"operation": "hardness", "value": 5}`) works exactly like `[{"operation": "hardness", "value": 5}]`, whether
+it's the full object form or the shorthand string.
+
+An entry written this way can also carry a `name` (or `id`), used as its label in modifier ids and log lines
+instead of the array index.
+
+Keys starting with an underscore are ignored, so `"_comment"` can be used as a note to yourself.
+
+The filename provides the default namespace for selectors that omit one.
 
 ## Selectors
 
-Selectors are parsed for each target type that supports them. You can combine these features.
+A selector can be written three ways, and they mix freely:
 
-### ID selectors
+- **a string** — the shorthand, best for the common cases (`"minecraft:zombie"`, `"#c:ores"`, `"!isFood"`),
+- **an object** — the full form, for anything the shorthand cannot express,
+- **an array** — matches if *any* entry matches (`["minecraft:zombie", "#minecraft:skeletons"]`).
 
-- `minecraft:zombie` targets a specific ID.
-- If no namespace is provided, the JSON filename is used as the namespace.
+Every selector below is available on every target type that can support it, worked out from what the target
+actually is rather than listed per folder. And because an item stack *is* a specific item, every item selector
+(id, tag, regex, namespace, `isFood`, ...) works on item stacks too, with no extra work.
 
-### Tag selectors
+### The object form
 
-- `#minecraft:skeletons` targets a tag.
+An object with a `type` field is one selector spelled out in full:
 
-### Regex selectors
+```json
+{ "type": "regex", "pattern": ".*_SWORD", "ignore_case": true, "match": "path" }
+```
 
-- `regex:.*skeleton.*` matches by regex against the ID string.
+An object *without* a `type` is read as "all of these at once":
 
-### Inverted selectors
+```json
+{ "namespace": "minecraft", "tag": "c:swords", "nbt": { "Damage": 0 } }
+```
 
-- `!minecraft:zombie` matches everything except zombies.
-- Works with any selector.
+Two fields work on any selector object:
 
-### Composite selectors
+- `"invert": true` — flips it,
+- `"specificity": 120` — overrides how specific it counts as. Entries are applied least-specific first, so a
+  higher number makes this entry win over the ones it overlaps with.
 
-- `minecraft:skeleton || minecraft:stray`
-- `#minecraft:undead && !minecraft:stray`
+### Available selectors
 
-### NBT selectors
+| Written as a string | Written as an object | Matches |
+| --- | --- | --- |
+| `minecraft:zombie` | `{"id": "minecraft:zombie"}`, `{"id": ["a", "b"]}` | one specific id. No namespace means the filename is used |
+| `#minecraft:skeletons` | `{"tag": "minecraft:skeletons"}`, `{"tag": [...]}` | anything in that tag |
+| `regex:.*skeleton.*` | `{"regex": ".*skeleton.*"}` | the id against a regex |
+| `@somemod` | `{"namespace": "somemod"}` | everything that mod added |
+| `*` | `{"type": "always"}` | everything |
+| `{IsBaby:1b}`, `minecraft:zombie{IsBaby:1b}` | `{"nbt": {"IsBaby": 1}}` | NBT, for targets that have any |
+| `isFood`, `hasDurability`, `isEnchanted`, `isPotion`, `isTool`, `isDyeable`, `isFireResistant`, `hasAttributes` | `{"isFood": true}` | items carrying that data component |
+| `component:minecraft:food` | `{"has_component": "minecraft:food"}`, `{"has_component": [...]}` | any data component by id; a list means "has all of them" |
+| `isMonster`, `isCreature`, `isAmbient`, `isWaterCreature`, ... | `{"mob_category": "monster"}`, `{"mob_category": [...]}` | entities in that spawn category. Every vanilla category has a word |
+| `isEnemy` | `{"is_enemy": true}` | entities the game treats as hostile |
+| `type:minecraft:smelting` | `{"recipe_type": "minecraft:smelting"}` | recipes of that recipe type (recipes only) |
+| — | `{"recipe_type_regex": ".*cooking"}` | recipes whose type id matches a regex (recipes only) |
+| `ingredient:#minecraft:planks` | `{"contains_ingredient": "#minecraft:planks"}` | recipes that accept a matching item (recipes only) |
+| `result:minecraft:torch` | `{"contains_result": "minecraft:torch"}` | recipes whose result is a matching item (recipes only) |
+| `!minecraft:zombie` | `{"not": "minecraft:zombie"}` | anything the inner selector does not |
+| `a \|\| b` | `{"any": ["a", "b"]}` | either |
+| `a && b` | `{"all": ["a", "b"]}` | both |
 
-Works for entity and item stack targets that support NBT serialization:
+`regex` takes two extra options: `"ignore_case": true`, and `"match"` set to `full` (the default), `path` or
+`namespace` to pick which part of the id the pattern runs against.
 
-- `{IsBaby:1b}`
-- `minecraft:zombie{IsBaby:1b}`
+The recipe-only `contains_ingredient` / `contains_result` matchers take a full **item** selector as their value,
+so anything you can write to pick an item — an id, `#tag`, `regex:`, a nested `any`/`all` — works to pick which
+recipes to touch (`{"contains_ingredient": {"regex": ".*_log"}}`). The plain `id`/`regex`/`namespace` selectors
+on the recipe target match against the recipe's own id.
 
-These are evaluated when the entity or item stack is loaded, not continuously.
+`not`, `any` and `all` nest as deep as you like, and each of their entries is itself a full selector — string,
+object or array:
 
-### Component selectors (items)
+```json
+{
+  "all": [
+    "#c:swords",
+    { "not": { "any": ["@somemod", "regex:.*_wooden_.*"] } },
+    { "nbt": { "Damage": 0 } }
+  ]
+}
+```
 
-For item and item stack targets:
+NBT is compared as a subset, and can be written either as SNBT (`"{IsBaby:1b}"`) or as a plain JSON object
+(`{"IsBaby": 1}`). It is evaluated when the entity or item stack is loaded, not continuously.
 
-- `isFood`
-- `hasDurability`
-- `isEnchanted`
-- `isPotion`
+## Setter shorthands
+
+Any setter can be written as a string instead of an object:
+
+```json
+{
+  "minecraft:stone_sword": "remove",
+  "minecraft:diamond_sword": ["durability x2", "tooltip Twice the sword"]
+}
+```
+
+The grammar is `<operation> [token]...`, where each token is one of:
+
+| Token | Becomes |
+| --- | --- |
+| `key=value` | that field, as written (`slot=chest`, `broadcast=false`) |
+| `x2`, `*2` | `"multiplier": 2` |
+| `+5`, `-5` | `"offset": 5` |
+| anything else | a positional argument, whose meaning depends on the operation |
+
+Double quotes group a token containing spaces. That alone covers most operations:
+
+| Shorthand | Same as |
+| --- | --- |
+| `remove` / `delete` | `{"operation": "remove"}` |
+| `unique` | `{"operation": "unique", "limit": 1}` |
+| `unique 3` | `{"operation": "unique", "limit": 3}` |
+| `unique_shared 1 broadcast=false` | a pooled cap that stays quiet |
+| `durability 500` | a flat durability |
+| `durability x2` / `durability +100` | scaled / offset durability |
+| `max_stack 16`, `max_stack x2` | stack size |
+| `hardness 5`, `hardness x0.5`, `hardness +2` | block hardness, flat or tuned |
+| `blast_resistance x3`, `mining_speed x2` | the other two block tuners |
+| `explosion_power 5` | creeper blast radius |
+| `replace minecraft:stone` | swap the block out |
+| `food_modify nutrition_multiplier=2` | tune existing food values |
+
+A handful of operations take arguments that do not fit that pattern, so they read their own way:
+
+| Shorthand | Meaning |
+| --- | --- |
+| `attribute <id> <amount> [operation]` | `attribute minecraft:generic.max_health 40` |
+| `attribute <id> +5` | an additive modifier of 5 |
+| `attribute <id> %0.25` | a `multiply_base` modifier of 0.25 |
+| `attribute <id> 0.5 multiply_total slot=chest` | spelled out, with a slot |
+| `tooltip <the rest of the line>` | adds that line to the tooltip |
+| `tooltip_remove <index>` | drops a tooltip line |
+| `dependency <attribute> <scales with> x2` | see [Dependency](#dependency) |
+| `conversion <from> <to> [amount] [rate]` | see [Conversion](#conversion) |
+| `inject <source attribute> x0.5` | see [Attribute injections](#attribute-injections-attributesetterattribute) |
+| `remove_food` | strips the food component |
+| `replace_result <item>` | see [Recipes](#recipes-attributesetterrecipe) |
+| `replace_ingredient <match> <with>` | see [Recipes](#recipes-attributesetterrecipe) |
+
+Written out with no operation of its own, `attribute` keeps each target's own default: a base value on an
+entity, an additive modifier on an item stack.
+
+In the object form, the `operation` field may also be written `op`:
+
+```json
+{ "minecraft:stone_sword": { "op": "remove" } }
+```
 
 ## Entity (`attributesetter/entity`)
 
@@ -109,7 +259,8 @@ Supported entries:
 
 ## Item stacks (`attributesetter/item`)
 
-These entries add attribute modifiers to item stacks and use the `slot` field.
+These entries add attribute modifiers to item stacks and use the `slot` field. They go in the `item` folder,
+alongside the item-level entries below.
 
 ### Base attribute override
 
@@ -223,9 +374,11 @@ Inserts, replaces, or removes tooltip lines/components at a target index.
   - optional for `REMOVE`
   - accepts a single string, or an array of strings/JSON text component objects
 
-## Item type (`attributesetter/item_type`)
+## Item type (`attributesetter/item`, or `attributesetter/item_type`)
 
-These entries modify item-level data (durability, max stack, food).
+These entries modify item-level data (durability, max stack, food) - the item itself rather than one stack of
+it. They can go in the plain `item` folder together with everything above; `item_type` is still accepted and
+means "only these", which is occasionally useful for keeping files tidy.
 
 ### Durability
 
@@ -308,11 +461,19 @@ Field names:
 
 ## Blocks (`attributesetter/block`)
 
-These entries change block properties. Selectors support id, `#tag`, `regex:`, `!`, and `&&`/`||` (no NBT or component selectors).
+These entries change block properties. Blocks have no NBT and no data components, so the selectors that read
+those are not available here; everything else (id, tag, regex, namespace, `not`/`any`/`all`, `*`) is.
 
 ### Hardness
 
-Retunes the block's hardness (`destroySpeed`), which is the base mining time. Uses `multiplier` (default `1.0`) and `offset` (default `0.0`); the result is `current * multiplier + offset`, clamped to `>= 0`.
+Retunes the block's hardness (`destroySpeed`), which is the base mining time. Uses `multiplier` (default
+`1.0`) and `offset` (default `0.0`); the result is `current * multiplier + offset`, clamped to `>= 0`. Blocks
+vanilla marks unbreakable (bedrock, barrier) are skipped, so a multiplier cannot accidentally make them
+diggable.
+
+Give a `value` instead of a multiplier/offset to set the hardness outright - `"hardness 5"` - which *does*
+apply to unbreakable blocks, since asking for a number is unambiguous. The same holds for explosion resistance
+and mining speed.
 
 ```json
 {
@@ -368,6 +529,77 @@ Swaps the block for another one every time it is generated or placed (worldgen, 
 ### Remove
 
 `"operation": "REMOVE"` (alias `DELETE`) also works in the `block` folder: every generated/placed copy becomes air, and the block's BlockItem is removed like any other removed item (see below). Same "already-loaded chunks convert only when re-set" limitation as replace.
+
+## Recipes (`attributesetter/recipe`)
+
+Entries in the `recipe` folder (or `recipes`) select recipes and then remove or rewrite them. Recipe edits are
+applied to the server's recipe manager during the datapack reload and synced to clients through the game's own
+recipe sync, so a `/reload` is enough and removing the entry brings the recipe back.
+
+Recipes are selected by:
+
+- the recipe's own **id** — `minecraft:diamond_sword`, `regex:.*_from_.*`, `@somemod`, and the `!`/`&&`/`||`
+  combinators, exactly like every other target;
+- **recipe type** — `type:minecraft:smelting` / `{"recipe_type": "minecraft:smelting"}`, or a regex against the
+  type id with `{"recipe_type_regex": ".*cooking"}`;
+- **an ingredient it accepts** — `ingredient:#minecraft:planks` / `{"contains_ingredient": <item selector>}`;
+- **its result** — `result:minecraft:torch` / `{"contains_result": <item selector>}`.
+
+`contains_ingredient` and `contains_result` take a full item selector as their value, so the item side can be a
+tag, a regex, or a nested selector.
+
+### Remove
+
+```json
+{ "minecraft:diamond_sword": "remove" }
+```
+
+- `operation`: `remove` (alias `delete`)
+
+Drops the recipe. Nothing else is needed.
+
+### Replace result
+
+```json
+{
+  "result:minecraft:torch": {
+    "operation": "replace_result",
+    "with": "minecraft:soul_torch",
+    "count": 4
+  }
+}
+```
+
+- `operation`: `replace_result` (alias `result`)
+- `with` (required, alias `to`/`result`/`item`/`value`): the item the recipe now produces. Accepts a full item
+  string, so components work (`minecraft:diamond_sword[minecraft:damage=0]`).
+- `count` (alias `amount`, default `1`): how many.
+- Shorthand: `replace_result minecraft:soul_torch count=4`.
+
+### Replace ingredient
+
+```json
+{
+  "ingredient:minecraft:stick": {
+    "operation": "replace_ingredient",
+    "match": "minecraft:stick",
+    "with": "minecraft:blaze_rod"
+  }
+}
+```
+
+- `operation`: `replace_ingredient`
+- `match` (required, alias `from`/`ingredient`/`target`): an **item selector** — every ingredient of the recipe
+  that accepts a matching item is replaced. Same grammar as `contains_ingredient`, so `#minecraft:planks`,
+  `{"regex": ".*_log"}`, etc. all work.
+- `with` (required, alias `to`/`replacement`): the replacement ingredient — an item id, a `#tag`, or an array of
+  either (an array means "any of these").
+- Shorthand: `replace_ingredient <match> <with>`, e.g. `replace_ingredient #minecraft:planks minecraft:stone`.
+
+`replace_result` and `replace_ingredient` reconstruct the recipe, so they work on crafting (shaped and
+shapeless), smelting/blasting/smoking/campfire, and stonecutting recipes. A recipe type they don't know how to
+rebuild (a modded recipe with its own class) is left untouched, with a warning in the log; `remove` works on any
+recipe regardless of type.
 
 ## Removing things from the game
 

@@ -1,5 +1,6 @@
 package com.httpedro.attributesetter.selectors;
 
+import java.util.Arrays;
 import java.util.Collection;
 
 public class CompositeASSelector<T> extends ASSelector<T> {
@@ -46,11 +47,11 @@ public class CompositeASSelector<T> extends ASSelector<T> {
     public float getSpecificity() {
         float biggestPrio = Float.NEGATIVE_INFINITY;
         for (var selector : selectors) {
-            var prio = selector.getSpecificity();
+            var prio = selector.specificity();
             if (prio > biggestPrio)
                 biggestPrio = prio;
         }
-        return biggestPrio;
+        return biggestPrio == Float.NEGATIVE_INFINITY ? 0 : biggestPrio;
     }
 
     @Override
@@ -60,5 +61,10 @@ public class CompositeASSelector<T> extends ASSelector<T> {
                 return false;
         }
         return true;
+    }
+
+    @Override
+    public Collection<ASSelector<T>> children() {
+        return Arrays.asList(selectors);
     }
 }

@@ -210,17 +210,37 @@ public class AttributeSetterClient {
         return line.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("item.modifiers.");
     }
 
+    /**
+     * Translation key prefixes used by attribute modifier lines. NeoForge replaces vanilla's attribute tooltip
+     * section with its own ({@code AttributeUtil.addAttributeTooltips}), which renders non-base modifiers as
+     * {@code neoforge.modifier.plus} / {@code neoforge.modifier.take} instead of {@code attribute.modifier.plus.N}.
+     * Missing those keys made the section scan stop early and leave the original lines below our merged block.
+     */
+    private static final String[] MODIFIER_KEY_PREFIXES = {
+            "item.modifiers.",
+            "attribute.modifier.",
+            "neoforge.modifier.",
+            "neoforge.attribute.debug."
+    };
+
     private static boolean isModifierLine(Component line)
     {
-        if (line.getContents() instanceof TranslatableContents ttc)
+        // Base lines are a literal " " (and NeoForge's shift-expanded rows a literal " ┇ ") with the actual
+        // modifier translatable appended as a sibling, so the whole tree has to be checked, not just the root.
+        return hasModifierKey(line);
+    }
+
+    private static boolean hasModifierKey(Component component)
+    {
+        if (component.getContents() instanceof TranslatableContents ttc)
         {
             String key = ttc.getKey();
-            if (key.startsWith("item.modifiers.") || key.startsWith("attribute.modifier."))
-                return true;
+            for (String prefix : MODIFIER_KEY_PREFIXES)
+                if (key.startsWith(prefix))
+                    return true;
         }
-        // Green folded lines are a literal " " with the "attribute.modifier.equals.*" translatable as a sibling.
-        for (Component sibling : line.getSiblings())
-            if (sibling.getContents() instanceof TranslatableContents ttc && ttc.getKey().startsWith("attribute.modifier."))
+        for (Component sibling : component.getSiblings())
+            if (hasModifierKey(sibling))
                 return true;
         return false;
     }

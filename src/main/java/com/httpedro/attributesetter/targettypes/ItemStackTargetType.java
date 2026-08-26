@@ -26,6 +26,11 @@ public class ItemStackTargetType extends RegistryTargetType<ItemStack, Item> imp
     }
 
 	@Override
+	public java.util.List<String> getFolderAliases() {
+		return java.util.List.of("items", "itemstack", "item_stack", "itemstacks");
+	}
+
+	@Override
 	public Item getSingleton(ItemStack instance) {
 	    return instance.getItem();
 	}

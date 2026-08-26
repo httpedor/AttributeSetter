@@ -19,6 +19,11 @@ public class BlockTargetType extends SingletonTargetType<Block> implements IIden
     }
 
     @Override
+    public java.util.List<String> getFolderAliases() {
+        return java.util.List.of("blocks");
+    }
+
+    @Override
     public ResourceLocation getId(Block obj) {
         return BuiltInRegistries.BLOCK.getKey(obj);
     }

@@ -2,7 +2,6 @@ package com.httpedro.attributesetter.compat.curios;
 
 import com.httpedro.attributesetter.Attributesetter;
 import com.httpedro.attributesetter.TargetTypes;
-import com.httpedro.attributesetter.selectors.CompositeASSelector;
 import com.httpedro.attributesetter.selectors.IdSelector;
 import com.httpedro.attributesetter.setters.ASSetter;
 import com.httpedro.attributesetter.setters.CompositeASSetter;
@@ -21,25 +20,17 @@ public class CuriosCompat {
         TargetTypes.ITEMSTACK.registerSetterBuilder(5, (obj, id, selector) -> {
             var opEl = obj.get("operation");
             var slotEl = obj.get("slot");
+            // Every curio setter is about an attribute; bailing here keeps this builder from claiming - or
+            // complaining about - the durability/food/tooltip entries that pass through on their way elsewhere.
+            var attrEl = obj.get("attribute");
+            if (attrEl == null)
+                return null;
             String[] slots;
             if (slotEl == null)
             {
                 // This is not working because of load order. The Curios mod loads the data packs after Attributesetter, so I can't get the item slots here.
-                ResourceLocation itemId = null;
-                if (selector instanceof IdSelector idSelector)
-                    itemId = idSelector.id;
-                else if (selector instanceof CompositeASSelector compositeSelector)
-                {
-                    for (int i = 0; i < compositeSelector.selectors.length; i++)
-                    {
-                        var subSelector = compositeSelector.selectors[i];
-                        if (subSelector instanceof IdSelector idSelector)
-                        {
-                            itemId = idSelector.id;
-                            break;
-                        }
-                    }
-                }
+                var idSelector = selector == null ? null : selector.find(IdSelector.class);
+                ResourceLocation itemId = idSelector == null ? null : idSelector.id;
 
                 if (itemId == null)
                     return null;
@@ -63,12 +54,6 @@ public class CuriosCompat {
             else
                 slots = new String[] { slotEl.getAsString().substring("curio:".length()) };
 
-            var attrEl = obj.get("attribute");
-            if (attrEl == null)
-            {
-                Attributesetter.LOGGER.warn("Curio item setter {} is missing an attribute", id);
-                return null;
-            }
             var attr = BuiltInRegistries.ATTRIBUTE.getHolder(ResourceLocation.parse(attrEl.getAsString()));
             if (attr == null || attr.isEmpty())
             {

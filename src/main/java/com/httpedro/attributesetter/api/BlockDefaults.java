@@ -4,6 +4,7 @@ import com.httpedro.attributesetter.mixin.BlockBehaviourAccessor;
 import com.httpedro.attributesetter.mixin.BlockStateBaseAccessor;
 
 import it.unimi.dsi.fastutil.objects.Reference2FloatOpenHashMap;
+import com.httpedro.attributesetter.util.RegistryValues;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.Block;
 
@@ -28,7 +29,7 @@ public class BlockDefaults {
     {
         hardness = new Reference2FloatOpenHashMap<>();
         blastResistance = new Reference2FloatOpenHashMap<>();
-        for (var block : BuiltInRegistries.BLOCK)
+        for (var block : RegistryValues.of(BuiltInRegistries.BLOCK))
         {
             hardness.put(block, ((BlockStateBaseAccessor) block.defaultBlockState()).as$getDestroySpeed());
             blastResistance.put(block, ((BlockBehaviourAccessor) block).as$getExplosionResistance());
